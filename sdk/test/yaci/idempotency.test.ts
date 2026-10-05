@@ -85,9 +85,17 @@ describe("idempotent agent payments", () => {
   it("crash after submit, before the journal saw it land: the re-run refuses", async () => {
     const amt = 1_300_000n;
     const journal = new FileJournal(journalPath());
-    const signed = await buildSigned("INV-C", amt);
-    journal.put({ intentId: "INV-C", allowance: unit, tx: txFacts(w.lucid, signed), status: "pending", at: "" });
-    expect((await submitRaw(signed)).ok).toBe(true);
+    // Setup: get one tx for INV-C accepted (rebuilding if a stale provider read made the build
+    // use already-spent inputs), journaling it as pending first, exactly like payOnce does.
+    let signed = "";
+    for (let attempt = 1; ; attempt++) {
+      signed = await buildSigned("INV-C", amt);
+      journal.put({ intentId: "INV-C", allowance: unit, tx: txFacts(w.lucid, signed), status: "pending", at: "" });
+      const res = await submitRaw(signed);
+      if (res.ok) break;
+      if (attempt >= 5 || !/BadInputsUTxO|All inputs are spent/.test(res.body)) throw new Error(`setup submit failed: ${res.body.slice(0, 300)}`);
+      await sleep(10_000);
+    }
     // ...process dies here...
     const rerun = await payOnce(req("INV-C", amt), { q, journal, sign, pollMs: 2000 });
     expect(rerun).toMatchObject({ status: "already-paid", source: "journal" });
