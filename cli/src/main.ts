@@ -475,7 +475,8 @@ const commands: Record<string, (argv: string[]) => Promise<void>> = {
     const vault = vaultOf(lucid);
     const unitArg = positionals[0] ?? die("usage: vault agent overlimit <unit> ...");
     try {
-      await assertNotPaid(chainQuery(), journal(), unitArg!, intentId, INTENT_LABEL);
+      const current = await readAllowance(lucid, vault, unitArg!);
+      await assertNotPaid(chainQuery(), journal(), unitArg!, current.utxo.txHash, intentId, INTENT_LABEL);
     } catch (e) {
       if (e instanceof AlreadyPaid) return out({ alreadyPaid: e.txHash, source: e.source, intentId });
       throw e;
@@ -485,6 +486,7 @@ const commands: Record<string, (argv: string[]) => Promise<void>> = {
     const collateral = (await lucid.utxosAt(agentAddr)).find((u) => Object.keys(u.assets).length === 1 && !u.scriptRef) ?? die("agent needs collateral");
     lucid.selectWallet.fromAddress(agentAddr, [collateral!]);
     const built = await agent.buildOverLimitSpend({
+      tipMs: await chainQuery().tipMs(),
       lucid,
       vault,
       allowance: al,
