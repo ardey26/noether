@@ -18,6 +18,8 @@ import {
   waitForConfig,
   chainQuery,
   TARGET,
+  MAX_VALIDITY_MS,
+  tipMs,
   sleep,
   submitRaw,
   treasuryUtxos,
@@ -192,18 +194,17 @@ describe("utxo structure", () => {
 describe("time", () => {
   it("T1 no upper bound", async () => expectScriptFailure(await attack(() => ctx(), { validity: { to: null } })));
   it("T1 no lower bound", async () => expectScriptFailure(await attack(() => ctx(), { validity: { from: null } })));
-  it("T2 validity wider than max_tx_validity_ms (2 min)", async () => {
-    const now = Date.now();
-    const from = w.lucid.slotToUnixTime(w.lucid.unixTimeToSlot(now - 30_000));
-    await expectScriptFailure(await attack(() => ctx(), { validity: { from, to: from + 200_000 } }));
+  it("T2 validity wider than max_tx_validity_ms", async () => {
+    const from = w.lucid.slotToUnixTime(w.lucid.unixTimeToSlot(Math.min(Date.now(), await tipMs())));
+    await expectScriptFailure(await attack(() => ctx(), { validity: { from, to: from + Number(MAX_VALIDITY_MS) + 80_000 } }));
   });
   it("T2 a range straddling a window boundary (short-period allowance)", async () => {
     const now = BigInt(Date.now());
     // 60 s windows starting 45 s ago: [now-45s, now+15s) is window 0.
     const short = await grant(w, { periodMs: 60_000n, windowStart: now - 45_000n });
     const c = await ctx(short);
-    // Validity is computed only now, right before submitting (provider reads can be slow).
-    const from = w.lucid.slotToUnixTime(w.lucid.unixTimeToSlot(Date.now() - 5_000));
+    // Validity is computed only now, right before submitting, anchored at the tip.
+    const from = w.lucid.slotToUnixTime(w.lucid.unixTimeToSlot(Math.min(Date.now() - 5_000, await tipMs())));
     const ws = Number(c.allowance.datum.windowStart);
     const k = Math.floor((from - ws) / 60_000);
     const boundary = ws + (k + 1) * 60_000;
@@ -310,7 +311,8 @@ describe("infra and ledger rules", () => {
   });
   it("O3 a pre-signed tx held back past its TTL is dead", async () => {
     const c = await ctx();
-    const from = w.lucid.slotToUnixTime(w.lucid.unixTimeToSlot(Date.now() - 30_000));
+    // Lower bound at the tip (so only the upper bound can be at fault), TTL 8 s from now.
+    const from = w.lucid.slotToUnixTime(w.lucid.unixTimeToSlot(Math.min(Date.now() - 30_000, await tipMs())));
     const to = w.lucid.slotToUnixTime(w.lucid.unixTimeToSlot(Date.now() + 8_000));
     const cbor = await buildAttack(c, { validity: { from, to } });
     await sleep(12_000);

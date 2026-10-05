@@ -18,7 +18,7 @@ import type { AllowanceUtxo, ConfigUtxo } from "../../src/chain.js";
 import { allowanceToData, spendRedeemer, type AllowanceDatum } from "../../src/data.js";
 import { windowFor } from "../../src/limits.js";
 import type { Vault } from "../../src/vault.js";
-import { ADA, submitRaw, type Key } from "./world.js";
+import { ADA, TARGET, submitRaw, tipMs, type Key } from "./world.js";
 
 // Per redeemer; two redeemers must still fit the 16.5M mem tx limit.
 export const BLIND_EX_UNITS = { mem: 6_000_000, steps: 2_500_000_000 };
@@ -70,7 +70,7 @@ export type Attack = {
   requiredSigners?: string[];
   /** Keys that sign (default: [agent]). */
   signWith?: Key[];
-  /** Validity in ms; null drops that bound. Default: [now - 30 s, now + 90 s]. */
+  /** Validity in ms; null drops that bound. Default: [chain tip, tip + 90 s (devnet) / 5 min (preprod)]. */
   validity?: { from?: number | null; to?: number | null };
   refInputs?: UTxO[];
   mint?: { assets: Assets; policy: Script; redeemer?: string };
@@ -85,9 +85,14 @@ export type Attack = {
 export async function buildAttack(ctx: Ctx, a: Attack = {}) {
   const { lucid, vault, allowance, config, refScript, agent } = ctx;
   const collateral = a.collateral?.utxo ?? ctx.collateral;
-  const nowMs = Date.now();
-  const lowerMs = a.validity?.from === undefined ? lucid.slotToUnixTime(lucid.unixTimeToSlot(nowMs - 30_000)) : a.validity.from;
-  const toMs = a.validity?.to === undefined ? lucid.slotToUnixTime(lucid.unixTimeToSlot(nowMs + 90_000)) : a.validity.to;
+  // Anchor at the chain tip: a lower bound after the tip is rejected by the
+  // mempool before any script runs, which would make every attack "pass" for
+  // the wrong reason.
+  const tip = Math.min(Date.now(), await tipMs());
+  const nowMs = tip;
+  const lowerMs = a.validity?.from === undefined ? lucid.slotToUnixTime(lucid.unixTimeToSlot(tip)) : a.validity.from;
+  const width = TARGET === "preprod" ? 300_000 : 90_000;
+  const toMs = a.validity?.to === undefined ? lucid.slotToUnixTime(lucid.unixTimeToSlot(tip + width)) : a.validity.to;
   const payments = a.payments ?? [{ to: ctxPayee(ctx), assets: { lovelace: 5n * ADA } }];
   const fee = a.fee ?? 1_500_000n;
   const paid = add(...payments.map((p) => p.assets), ...(a.extraOutputs ?? []).map((o) => o.assets));

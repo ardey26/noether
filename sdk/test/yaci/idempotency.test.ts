@@ -9,7 +9,7 @@ import { awaitSettled } from "../../src/chain.js";
 import { assemble, witness } from "../../src/cosign.js";
 import { FileJournal, NeverLands, submitResolving, txFacts } from "../../src/idempotency.js";
 import { payOnce } from "../../src/pay.js";
-import { ADA, chainQuery, grant, readAllowance, readConfig, submitRaw, yaciWorld, type World } from "./world.js";
+import { ADA, chainQuery, grant, tipMs, readAllowance, readConfig, submitRaw, yaciWorld, type World } from "./world.js";
 
 let w: World;
 let unit: string;
@@ -38,7 +38,12 @@ const sign = (cbor: string) => witness(w.lucid, cbor, w.agent.privateKey);
 
 async function buildSigned(intentId: string, lovelace: bigint, validityMs?: number) {
   const r = req(intentId, lovelace, validityMs);
-  const built = await buildAgentSpend({ ...r, allowance: await readAllowance(w.lucid, w.vault, unit), config: await readConfig(w.lucid, w.vault) });
+  const built = await buildAgentSpend({
+    ...r,
+    tipMs: await tipMs(),
+    allowance: await readAllowance(w.lucid, w.vault, unit),
+    config: await readConfig(w.lucid, w.vault),
+  });
   const cbor = built.tx.toCBOR();
   return (await assemble(w.lucid, cbor, [await sign(cbor)])).toCBOR();
 }
@@ -88,7 +93,7 @@ describe("idempotent agent payments", () => {
   it("stale tx whose input another payment consumed: decided 'never', then the intent is paid exactly once", async () => {
     const amtW = 1_400_000n;
     const journal = new FileJournal(journalPath());
-    const stale = await buildSigned("INV-W", amtW, 100_000); // short TTL: validity starts 60 s back, so ~40 s remain
+    const stale = await buildSigned("INV-W", amtW, 100_000); // short TTL: ~40 s or less remain (validity starts at or before the tip)
     journal.put({ intentId: "INV-W", allowance: unit, tx: txFacts(w.lucid, stale), status: "pending", at: "" });
     // A different payment consumes the allowance UTxO first.
     expect((await payOnce(req("INV-V", 1_500_000n), { q, journal, sign, pollMs: 2000 })).status).toBe("paid");

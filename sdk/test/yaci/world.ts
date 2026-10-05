@@ -38,6 +38,17 @@ export const ADMIN = process.env.YACI_ADMIN ?? "http://localhost:10000/local-clu
 export const SUBMIT = process.env.YACI_SUBMIT ?? "http://localhost:8090/api/submit/tx";
 export const ADA = 1_000_000n;
 
+/**
+ * Vault config `max_tx_validity_ms` for the world. Preprod needs room: ranges
+ * start at the chain tip, which can lag the wall clock by a minute or more.
+ */
+export const MAX_VALIDITY_MS = TARGET === "preprod" ? 600_000n : 120_000n;
+
+/** POSIX ms of the chain tip (falls back to now). Mempools judge validity against the tip. */
+export async function tipMs(): Promise<number> {
+  return (await chainQuery().tipMs()) ?? Date.now();
+}
+
 /** Chain queries for fate checks on the active target. */
 export const chainQuery = () => (TARGET === "preprod" ? blockfrostQuery(BF_URL, BF_ID) : blockfrostQuery(STORE, "yaci"));
 
@@ -233,7 +244,7 @@ export async function yaciWorld(opts: { maxTxValidityMs?: bigint } = {}) {
       owners: [a.pkh, b.pkh, c.pkh],
       threshold: 2n,
       paused: false,
-      maxTxValidityMs: opts.maxTxValidityMs ?? 120_000n,
+      maxTxValidityMs: opts.maxTxValidityMs ?? MAX_VALIDITY_MS,
     },
     { refScriptAddress: refHolder },
   ));

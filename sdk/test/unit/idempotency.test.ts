@@ -11,14 +11,19 @@ import {
 
 const T: TxFacts = { hash: "aa".repeat(32), inputs: [{ txHash: "bb".repeat(32), index: 0 }], ttlMs: 1_000_000 };
 
-function chain(over: Partial<{ exists: Set<string>; spender: string | null | undefined; assetTxs: string[] | undefined; meta: Record<string, unknown> }>): ChainQuery {
+type Inputs = { txHash: string; index: number; units: string[] }[];
+function chain(
+  over: Partial<{ exists: Set<string>; spender: string | null | undefined; inputs: Record<string, Inputs>; meta: Record<string, unknown> }>,
+): ChainQuery {
   return {
     txExists: async (h) => over.exists?.has(h) ?? false,
     spenderOf: async () => over.spender,
-    assetTxs: async () => over.assetTxs,
+    txInputs: async (h) => over.inputs?.[h] ?? [],
     txMetadata: async (h) => over.meta?.[h],
+    tipMs: async () => undefined,
   };
 }
+const CUR = "ee".repeat(32);
 
 describe("txFate", () => {
   it("landed when the tx is on-chain", async () => {
@@ -45,29 +50,40 @@ describe("assertNotPaid", () => {
   it("refuses when a pending journal entry turns out to have landed (crash after submit)", async () => {
     const j = new MemoryJournal();
     j.put(entry("pending"));
-    await expect(assertNotPaid(chain({ exists: new Set([T.hash]) }), j, "u", "INV-1", 7041)).rejects.toBeInstanceOf(AlreadyPaid);
+    await expect(assertNotPaid(chain({ exists: new Set([T.hash]) }), j, "u", CUR, "INV-1", 7041)).rejects.toBeInstanceOf(AlreadyPaid);
     expect(j.get("INV-1")?.status).toBe("landed");
   });
   it("allows a new attempt only once the old one can never land", async () => {
     const j = new MemoryJournal();
     j.put(entry("pending"));
-    await assertNotPaid(chain({ spender: "cc".repeat(32), assetTxs: [] }), j, "u", "INV-1", 7041);
+    await assertNotPaid(chain({ spender: "cc".repeat(32) }), j, "u", CUR, "INV-1", 7041);
     expect(j.get("INV-1")?.status).toBe("never");
   });
   it("waits while the old attempt is undecided, then decides", async () => {
     const j = new MemoryJournal();
     j.put(entry("pending"));
     let t = T.ttlMs - 10;
-    const q = chain({ spender: undefined, assetTxs: [] });
-    await assertNotPaid(q, j, "u", "INV-1", 7041, { now: () => (t += 60_000), pollMs: 1, graceMs: 100_000 });
+    const q = chain({ spender: undefined });
+    await assertNotPaid(q, j, "u", CUR, "INV-1", 7041, { now: () => (t += 60_000), pollMs: 1, graceMs: 100_000 });
     expect(j.get("INV-1")?.status).toBe("never");
   });
-  it("refuses when the chain shows the intent even if the journal was lost", async () => {
-    const q = chain({ assetTxs: ["dd".repeat(32)], meta: { ["dd".repeat(32)]: { h: "x", j: ['{"id":"INV-1","allowance":"u"}'] } } });
-    await expect(assertNotPaid(q, new MemoryJournal(), "u", "INV-1", 7041)).rejects.toMatchObject({ source: "chain" });
+  // Lineage: mint (aa) -> INV-1 paid in dd -> later spend ee (current allowance UTxO).
+  const D = "dd".repeat(32);
+  const lineage = (allowance: string) =>
+    chain({
+      inputs: {
+        [CUR]: [{ txHash: D, index: 0, units: ["lovelace", "u"] }],
+        [D]: [{ txHash: "aa".repeat(32), index: 0, units: ["lovelace"] }], // D spent the minted output... stop
+      },
+      meta: { [D]: { h: "x", j: [`{"id":"INV-1","allowance":"${allowance}"}`] } },
+    });
+  it("refuses when the allowance's lineage shows the intent even if the journal was lost", async () => {
+    await expect(assertNotPaid(lineage("u"), new MemoryJournal(), "u", CUR, "INV-1", 7041)).rejects.toMatchObject({ source: "chain", txHash: D });
   });
   it("does not confuse the same id on a different allowance", async () => {
-    const q = chain({ assetTxs: ["dd".repeat(32)], meta: { ["dd".repeat(32)]: { h: "x", j: ['{"id":"INV-1","allowance":"other"}'] } } });
-    expect(await findIntentOnChain(q, "u", "INV-1", 7041)).toBeNull();
+    expect(await findIntentOnChain(lineage("other"), "u", CUR, "INV-1", 7041)).toBeNull();
+  });
+  it("stops at the mint and reports 'not found' rather than guessing", async () => {
+    expect(await findIntentOnChain(lineage("u"), "u", CUR, "INV-2", 7041)).toBeNull();
   });
 });
