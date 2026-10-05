@@ -193,7 +193,7 @@ The adversary is a compromised agent key that builds arbitrary transactions.
 2. **Every agent spend carries a required intent id** (`--intent-id`, e.g. the invoice id). It is part of the hashed intent record.
 3. **Before building**, `payOnce` checks two sources:
    - **The operator journal** (`$VAULT_HOME/intents.jsonl`). It is written *before* submitting, so a crash right after submit is recoverable.
-   - **The chain**: recent txs of the allowance token, each carrying its intent record.
+   - **The chain**: the allowance's own history, walked backwards through its UTxO lineage using tx-level provider views. Each spend carries its intent record.
 
    If the intent has landed, it returns `already-paid` and builds nothing. If an earlier attempt is still undecided, it **waits for that attempt's fate** instead of paying again.
 4. **On "inputs already spent"**, it resolves the attempted tx's fate before anything else:
@@ -201,7 +201,10 @@ The adversary is a compromised agent key that builds arbitrary transactions.
    - **never:** another tx spent its inputs, or its TTL passed and it isn't on-chain. Only this case rebuilds.
    - **unknown:** it re-checks, bounded by the TTL.
 
+**Anchor validity at the chain tip, not the wall clock.** Mempools judge a tx against the *tip's* slot. On preprod the tip was observed 58–74 s behind the wall clock (sparse blocks), and a lower bound "60 s ago" was rejected as being in the future. The SDK uses `min(now − 60 s, tip)` when it knows the tip (`payOnce` fetches it).
+
 **What you must do as an integrator:**
+- **Treat the journal as required, not optional.** A chain scan that finds nothing is *not* proof the intent is unpaid: any provider can lag the chain. This happened in a preprod test run. An earlier version of the scan used Blockfrost's per-asset history index. That index lagged behind a payment that had just settled, so with the journal deliberately deleted, the test intent **was paid twice**. The lineage scan replaced it, but the principle stands. Only on-chain enforcement would make a lost journal safe; see the option at the end of this section.
 - **Derive the intent id from the business object** (invoice id, payout id), never from a timestamp or a random value per attempt. Retries must reuse it.
 - **Persist the journal durably**, next to the agent, and back it up. The chain scan is a safety net: it only covers the last N txs of *one* allowance.
 - **Scope matters.** The journal is operator-wide, so it refuses an id even on another allowance or vault. The chain scan is per allowance. If you run several operators, give them disjoint id spaces or a shared journal.
@@ -220,6 +223,8 @@ The adversary is a compromised agent key that builds arbitrary transactions.
 - No allowance ever paid the same intent twice.
 - But because I restarted the demo from scratch with the same invoice ids, **the merchant received INV-1001 and INV-1002 three times each (45 tADA instead of 21).** Nothing stopped it, since each restart was a fresh vault and there was no intent journal yet.
 - With the current SDK, the operator journal refuses a reused id. Each demo run now gets a per-run id suffix and includes a retry step, which reports "already paid".
+
+**Option, not implemented:** on-chain idempotency. The allowance datum could keep a bounded ring of the last K intent-id hashes, and the validator would reject a spend whose id is already in it. A duplicate would then fail on-chain even with a lost journal and a stale provider (within the last K payments). The cost: K × 32 bytes of datum, a redeemer field, and an audited on-chain change.
 
 ## What Cardano can't enforce exactly
 
@@ -276,7 +281,7 @@ Test counts at the time of writing:
 |---|---|
 | On-chain Aiken tests | 182 (168 unit/adversarial, 14 property) |
 | Mutations killed | 72 |
-| SDK unit + emulator tests | 38 |
+| SDK unit + emulator tests | 39 |
 | Real-node adversarial replays | 34 |
 | Real-node double-pay scenarios | 4 |
 | CLI smoke checks | 19 |
