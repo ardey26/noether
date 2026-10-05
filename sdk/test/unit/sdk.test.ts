@@ -84,6 +84,7 @@ describe("limits mirror", () => {
 describe("intent records", () => {
   const intent: Intent = {
     v: 1,
+    id: "INV-1",
     kind: "agent_spend",
     allowance: "aa",
     agent: k(1),

@@ -97,7 +97,7 @@ describe("vault lifecycle (emulator)", () => {
     const built = await buildAgentSpend({
       ...ctx,
       payments: [{ to: w.payee.address, assets: { lovelace: 5n * ADA } }],
-      purpose: "pay invoice #1",
+      intentId: crypto.randomUUID(), purpose: "pay invoice #1",
     });
     expect(built.next.spent[0]).toBe(5n * ADA + built.fee);
     expect(built.fee).toBeLessThan(1n * ADA);
@@ -133,13 +133,13 @@ describe("vault lifecycle (emulator)", () => {
     });
     try {
       const ctx = await agentCtx();
-      const ok = await buildAgentSpend({ ...ctx, payments: [{ to: w.payee.address, assets: { lovelace: 1n * ADA } }], purpose: "via signer" });
+      const ok = await buildAgentSpend({ ...ctx, payments: [{ to: w.payee.address, assets: { lovelace: 1n * ADA } }], intentId: crypto.randomUUID(), purpose: "via signer" });
       const wit = await requestWitness(socketPath, ok.tx.toCBOR());
       const signed = await assemble(lucid, ok.tx.toCBOR(), [wit]);
       await signed.submit();
       emulator.awaitBlock(1);
       const ctx2 = await agentCtx();
-      const refused = await buildAgentSpend({ ...ctx2, payments: [{ to: w.payee2.address, assets: { lovelace: 1n * ADA } }], purpose: "x" });
+      const refused = await buildAgentSpend({ ...ctx2, payments: [{ to: w.payee2.address, assets: { lovelace: 1n * ADA } }], intentId: crypto.randomUUID(), purpose: "x" });
       await expect(requestWitness(socketPath, refused.tx.toCBOR())).rejects.toThrow(/not allowed by signer policy/);
       const audit = readFileSync(auditLog, "utf8").trim().split("\n").map((l) => JSON.parse(l));
       expect(audit.map((e) => e.decision)).toEqual(["signed", "refused"]);
@@ -151,14 +151,14 @@ describe("vault lifecycle (emulator)", () => {
   it("preflight blocks a spend above the per-tx cap", async () => {
     const ctx = await agentCtx();
     await expect(
-      buildAgentSpend({ ...ctx, payments: [{ to: w.payee.address, assets: { lovelace: 12n * ADA } }], purpose: "too big" }),
+      buildAgentSpend({ ...ctx, payments: [{ to: w.payee.address, assets: { lovelace: 12n * ADA } }], intentId: crypto.randomUUID(), purpose: "too big" }),
     ).rejects.toMatchObject({ code: "TX_CAP" });
   });
 
   it("preflight blocks a non-allowlisted recipient", async () => {
     const ctx = await agentCtx();
     await expect(
-      buildAgentSpend({ ...ctx, payments: [{ to: w.stranger.address, assets: { lovelace: 1n * ADA } }], purpose: "x" }),
+      buildAgentSpend({ ...ctx, payments: [{ to: w.stranger.address, assets: { lovelace: 1n * ADA } }], intentId: crypto.randomUUID(), purpose: "x" }),
     ).rejects.toBeInstanceOf(LimitError);
   });
 
@@ -168,7 +168,7 @@ describe("vault lifecycle (emulator)", () => {
       buildAgentSpend({
         ...ctx,
         payments: [{ to: w.payee.address, assets: { lovelace: 12n * ADA } }],
-        purpose: "bypass",
+        intentId: crypto.randomUUID(), purpose: "bypass",
         skipPreflight: true,
       }),
     ).rejects.toThrow(/failed script execution\s+Spend\[0\]/);
@@ -176,11 +176,11 @@ describe("vault lifecycle (emulator)", () => {
 
   it("window cap accumulates across txs and blocks the overflow", async () => {
     const ctx = await agentCtx();
-    const b1 = await buildAgentSpend({ ...ctx, payments: [{ to: w.payee2.address, assets: { lovelace: 9n * ADA } }], purpose: "2" });
+    const b1 = await buildAgentSpend({ ...ctx, payments: [{ to: w.payee2.address, assets: { lovelace: 9n * ADA } }], intentId: crypto.randomUUID(), purpose: "2" });
     await signAndSubmit(lucid, emulator, b1.tx, [w.agent]);
     const ctx2 = await agentCtx();
     await expect(
-      buildAgentSpend({ ...ctx2, payments: [{ to: w.payee.address, assets: { lovelace: 6n * ADA } }], purpose: "3" }),
+      buildAgentSpend({ ...ctx2, payments: [{ to: w.payee.address, assets: { lovelace: 6n * ADA } }], intentId: crypto.randomUUID(), purpose: "3" }),
     ).rejects.toMatchObject({ code: "WINDOW_CAP" });
   });
 
@@ -189,7 +189,7 @@ describe("vault lifecycle (emulator)", () => {
     const built = await buildOverLimitSpend({
       ...ctx,
       payments: [{ to: w.stranger.address, assets: { lovelace: 40n * ADA } }],
-      purpose: "vendor prepayment",
+      intentId: crypto.randomUUID(), purpose: "vendor prepayment",
       cosigners: [w.a.pkh, w.c.pkh],
     });
     const summary = describeTx(built.tx.toCBOR());
@@ -206,7 +206,7 @@ describe("vault lifecycle (emulator)", () => {
       buildOverLimitSpend({
         ...ctx,
         payments: [{ to: w.stranger.address, assets: { lovelace: 1n * ADA } }],
-        purpose: "x",
+        intentId: crypto.randomUUID(), purpose: "x",
         cosigners: [w.a.pkh],
       }),
     ).rejects.toThrow(/need 2 owner co-signers/);
@@ -215,7 +215,7 @@ describe("vault lifecycle (emulator)", () => {
   it("window resets on its own after the period", async () => {
     emulator.awaitSlot(24 * 3600);
     const ctx = await agentCtx();
-    const b = await buildAgentSpend({ ...ctx, payments: [{ to: w.payee.address, assets: { lovelace: 8n * ADA } }], purpose: "new day" });
+    const b = await buildAgentSpend({ ...ctx, payments: [{ to: w.payee.address, assets: { lovelace: 8n * ADA } }], intentId: crypto.randomUUID(), purpose: "new day" });
     expect(b.next.spent[0]).toBe(8n * ADA + b.fee);
     await signAndSubmit(lucid, emulator, b.tx, [w.agent]);
   });
@@ -236,15 +236,15 @@ describe("vault lifecycle (emulator)", () => {
     await signAndSubmit(lucid, emulator, await owner.pause(lucid, vault, await readConfig(lucid, vault), [w.b.pkh, w.d.pkh]), [w.b, w.d]);
     let ctx = await agentCtx();
     await expect(
-      buildAgentSpend({ ...ctx, payments: [{ to: w.payee.address, assets: { lovelace: 1n * ADA } }], purpose: "p" }),
+      buildAgentSpend({ ...ctx, payments: [{ to: w.payee.address, assets: { lovelace: 1n * ADA } }], intentId: crypto.randomUUID(), purpose: "p" }),
     ).rejects.toMatchObject({ code: "PAUSED" });
     await expect(
-      buildAgentSpend({ ...ctx, payments: [{ to: w.payee.address, assets: { lovelace: 1n * ADA } }], purpose: "p", skipPreflight: true }),
+      buildAgentSpend({ ...ctx, payments: [{ to: w.payee.address, assets: { lovelace: 1n * ADA } }], intentId: crypto.randomUUID(), purpose: "p", skipPreflight: true }),
     ).rejects.toThrow(/failed script execution\s+Spend\[0\]/);
     asProposer(w.b);
     await signAndSubmit(lucid, emulator, await owner.unpause(lucid, vault, await readConfig(lucid, vault), [w.b.pkh, w.c.pkh]), [w.b, w.c]);
     ctx = await agentCtx();
-    const ok = await buildAgentSpend({ ...ctx, payments: [{ to: w.payee.address, assets: { lovelace: 1n * ADA } }], purpose: "after" });
+    const ok = await buildAgentSpend({ ...ctx, payments: [{ to: w.payee.address, assets: { lovelace: 1n * ADA } }], intentId: crypto.randomUUID(), purpose: "after" });
     await signAndSubmit(lucid, emulator, ok.tx, [w.agent]);
   });
 

@@ -378,7 +378,7 @@ describe("pause, races, malformed datums", () => {
     const x = await ctx();
     lucid.selectWallet.fromAddress(agent.address, [w.collateral]);
     await expect(
-      buildAgentSpend({ ...x, payments: [{ to: w.payee.address, assets: { lovelace: 1n * ADA } }], purpose: "x" }),
+      buildAgentSpend({ ...x, payments: [{ to: w.payee.address, assets: { lovelace: 1n * ADA } }], intentId: crypto.randomUUID(), purpose: "x" }),
     ).rejects.toMatchObject({ code: "AGENT_IS_OWNER" });
     lucid.selectWallet.fromPrivateKey(a.privateKey);
     await signSubmit(lucid, await owner.rotateOwners(lucid, vault, await readConfig(lucid, vault), [a.pkh, b.pkh, cc.pkh], 2n, [a.pkh, b.pkh]), [a, b]);

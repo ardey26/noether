@@ -18,6 +18,9 @@ import {
 import { awaitIndexed, readAllowance, readConfig, treasuryUtxos } from "../../src/chain.js";
 import { assemble, witness } from "../../src/cosign.js";
 import * as owner from "../../src/owner.js";
+
+// Local devnets have a horizon of a few minutes: keep owner TTLs well inside it.
+owner.setOwnerTxTtl(90_000);
 import type { Vault } from "../../src/vault.js";
 
 export const STORE = process.env.YACI_STORE ?? "http://localhost:8080/api/v1";
