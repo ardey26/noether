@@ -1,23 +1,37 @@
 # Preprod demo results
 
-Run: 2026-10-05T09:50:17Z. Network: Preprod. Every link opens the tx on Cardanoscan.
+Run: 2026-10-05T13:14:23Z. Network: Preprod. Every link opens the tx on Cardanoscan.
 
 | Step | Result |
 |---|---|
-| fund addr_test1vzk53dgfuh… with 20 tADA | [`98520b33aae786b3…`](https://preprod.cardanoscan.io/transaction/98520b33aae786b33b66f66de3b90eac1392c9ec153c55683666a250fc54f871) |
-| fund addr_test1vrdx44w3vu… with 10 tADA | [`cb5c178615961e4a…`](https://preprod.cardanoscan.io/transaction/cb5c178615961e4a49c7af375547656f02ac5eebce3ffe8b778d126e95897e6e) |
-| create vault (config NFT + ref script) | [`6e9454d061fcce5c…`](https://preprod.cardanoscan.io/transaction/6e9454d061fcce5c4bf4153a0f04e381e12e0efd667c3298c62dc762c59129fe) |
-| fund treasury 150 tADA | [`0c07167e5ebe73e6…`](https://preprod.cardanoscan.io/transaction/0c07167e5ebe73e688269bd7e02cfe47681b5843534028baa89f695e3b55dd66) |
-| grant allowance | [`1e07a5f3bf6dd00f…`](https://preprod.cardanoscan.io/transaction/1e07a5f3bf6dd00fe9d667c6c17a150dafd632f78f1abd3b3431d2699ac4ab8c) |
-| agent pays merchant 4 tADA (intent INV-1001) | [`fa2dd277fc75040c…`](https://preprod.cardanoscan.io/transaction/fa2dd277fc75040c0bfd00dc11d9d7a44020308251c124bdf941d2bbdfa443f2) |
-| agent pays merchant 8 tADA (intent INV-1002) | [`e6961b4859a14dff…`](https://preprod.cardanoscan.io/transaction/e6961b4859a14dff6a21e80f568b292b94f144d118955c930b3679f855bf0dd8) |
-| agent pays merchant 9 tADA (window now ~22.1 of 25) | [`09627ee449fbfc29…`](https://preprod.cardanoscan.io/transaction/09627ee449fbfc299350d16700bad38e6bb577cf34925e57579c51a6ec2c9bed) |
+| fund addr_test1vzk53dgfuh… with 20 tADA | [`d0fe1e58284fffa8…`](https://preprod.cardanoscan.io/transaction/d0fe1e58284fffa8303677b673afc4473f9d8d8750d5386b5be326ae22840ea8) |
+| fund addr_test1vrdx44w3vu… with 10 tADA | [`4856d5bbb3a8d3c3…`](https://preprod.cardanoscan.io/transaction/4856d5bbb3a8d3c36b42b3ad37636cd5865a7a9e3d3ba0e5d26729012fc796d3) |
+| create vault (config NFT + ref script) | [`346fba5d61155230…`](https://preprod.cardanoscan.io/transaction/346fba5d61155230068ed99a90c82a634522eb7f13d9233974c0385979097441) |
+| fund treasury 150 tADA | [`ed4eecf3ab35352d…`](https://preprod.cardanoscan.io/transaction/ed4eecf3ab35352d5841ead5472e8884d4b23e6596d8685b2f39489628a34693) |
+| grant allowance | [`0ddd5522b86f216e…`](https://preprod.cardanoscan.io/transaction/0ddd5522b86f216edb01a3f7749ba59c3161ad083a330fa05d78dc21eb1671c7) |
+| agent pays merchant 4 tADA (intent INV-1001) | [`a67407cbf1351e61…`](https://preprod.cardanoscan.io/transaction/a67407cbf1351e610af84371ea29b8d0685e29a0ef3f23711d73950a4a21a805) |
+| agent pays merchant 8 tADA (intent INV-1002) | [`d46e42d0f23779e2…`](https://preprod.cardanoscan.io/transaction/d46e42d0f23779e28d54a62fc65ac37ca23144d92440a45ecb324014c893a47e) |
+| agent retries INV-1001 | already paid in `a67407cbf1351e61…` (found via journal); no second payment |
+| agent pays merchant 9 tADA (window now ~22.1 of 25) | [`9e634f5327d43306…`](https://preprod.cardanoscan.io/transaction/9e634f5327d4330651dfb59dca1a4d92e1c03380878bc4ea3ad532f8ee1795c4) |
 | agent tries 11 tADA (> 10 per tx) | blocked: `TX_CAP` (no tx; nothing left the vault) |
 | agent tries 4 tADA (window would exceed 25) | blocked: `WINDOW_CAP` (no tx; nothing left the vault) |
 | agent tries to pay contractor (not on allowlist) | blocked: `DESTINATION` (no tx; nothing left the vault) |
 | bypass SDK preflight: 11 tADA, rejected by the validator script itself (node-level rejection: sdk/test/yaci) | blocked: `SCRIPT_OR_LEDGER` (no tx; nothing left the vault) |
-| over-limit 30 tADA, agent + owners a,c in one tx | [`8bd552335e730e0c…`](https://preprod.cardanoscan.io/transaction/8bd552335e730e0c35ed51506f49f44d31e71b64819ef749d9cff7824f660f19) |
-| pause (owners b,c) | [`28305f931f09ce25…`](https://preprod.cardanoscan.io/transaction/28305f931f09ce254372f90658cebbc339abd96546faa48d03c2bd761ac481a6) |
+| over-limit 30 tADA, agent + owners a,c in one tx | [`09e772d5f2ed0199…`](https://preprod.cardanoscan.io/transaction/09e772d5f2ed01997b3c9dd42a58def7f0d5c7e484308b2b77d787cda6081ee8) |
+| pause (owners b,c) | [`acdee61b42fb2d17…`](https://preprod.cardanoscan.io/transaction/acdee61b42fb2d1761e7a441f002a474c032e2a213911f3faf56b95201b09f98) |
 | agent spend while paused | blocked: `PAUSED` (no tx; nothing left the vault) |
-| unpause (owners a,b) | [`32322babdd454a31…`](https://preprod.cardanoscan.io/transaction/32322babdd454a3185864d3bd5911dbeb17b3cfe3e3f711b194c0da6d40342ee) |
-| revoke + reclaim (owners b,c) | [`4ccc40e7bd8826aa…`](https://preprod.cardanoscan.io/transaction/4ccc40e7bd8826aaad0d8345891f2a43633762ecc1e5b9e5500a09ef7520a041) |
+| unpause (owners a,b) | [`43cc2fa64f9f89c7…`](https://preprod.cardanoscan.io/transaction/43cc2fa64f9f89c7491f0ac5e0a4668b1be05063f0b594c130b61de8a212346c) |
+| revoke + reclaim (owners b,c) | [`520fff53771f064b…`](https://preprod.cardanoscan.io/transaction/520fff53771f064b07d1dd91e1b33a553af30bcc14ccb8a910f8afc95e4ae7c9) |
+| grant a fresh allowance for the LLM agent | [`ca61952aec50836e…`](https://preprod.cardanoscan.io/transaction/ca61952aec50836e769dadbf172267a95b223362985b79f8052fc8a82ab40e49) |
+| agent run 1: pay_invoice AP-1-10051314 | paid: [`923ec8df118b9079…`](https://preprod.cardanoscan.io/transaction/923ec8df118b9079519ccd7522b8a2775e25bb5896e04e6626edb3fea3d382e9) |
+| agent run 1: pay_invoice AP-2-10051314 | blocked (TX_CAP) |
+| agent run 1: pay_invoice AP-3-10051314 | blocked (DESTINATION) |
+| agent run 1: pay_invoice AP-4-10051314 | blocked (DESTINATION) |
+| agent run 1: request_owner_approval AP-2-10051314 | awaiting_owners |
+| agent run 2: pay_invoice AP-1-10051314 | already-paid: [`923ec8df118b9079…`](https://preprod.cardanoscan.io/transaction/923ec8df118b9079519ccd7522b8a2775e25bb5896e04e6626edb3fea3d382e9) |
+| agent run 2: pay_invoice AP-2-10051314 | blocked (TX_CAP) |
+| agent run 2: pay_invoice AP-3-10051314 | blocked (DESTINATION) |
+| agent run 2: pay_invoice AP-4-10051314 | blocked (DESTINATION) |
+| agent run 2: request_owner_approval AP-2-10051314 | awaiting_owners |
+| owners a+b co-sign the agent's escalation for AP-2 (15 tADA) | [`dfc7625f51ff7656…`](https://preprod.cardanoscan.io/transaction/dfc7625f51ff7656b1fd4dd58b7d52b04d442434d7965f85563397aad612b22f) |
+| revoke the LLM agent's allowance | [`c06f59ab1247f034…`](https://preprod.cardanoscan.io/transaction/c06f59ab1247f03467b255b7d3163fce38cabb7825fb88b87b2e98d7ad1f8bc0) |
