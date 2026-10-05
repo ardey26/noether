@@ -414,6 +414,7 @@ const commands: Record<string, (argv: string[]) => Promise<void>> = {
       out({ submitted: hash, fee: built.fee, spent: built.next.spent, intent: built.intent });
     } catch (e) {
       const err = e as Error & { code?: string };
+      if (isStaleInput(err)) throw err; // provider lag, not a refusal: let main() rebuild and retry
       out({ blocked: err.code ?? "SCRIPT_OR_LEDGER", reason: err.message.split("\n")[0]?.slice(0, 400) });
       process.exitCode = 3;
     }
@@ -537,6 +538,17 @@ const HELP = `vault <command>
   signer start --key agent --allowance <unit> --dest addr1,addr2 [--socket path] [limits...]
 env: VAULT_NETWORK=Preprod|Custom, BLOCKFROST_PROJECT_ID, VAULT_HOME`;
 
+/**
+ * Edge I6: providers can serve a UTxO view that lags the chain (Blockfrost
+ * answers from load-balanced backends at slightly different heights), so a
+ * build may pick an input that a just-confirmed tx already spent. The node
+ * rejects such a tx outright, so nothing was submitted; re-reading state and
+ * rebuilding is safe (eUTxO: a stale tx can never double-spend).
+ */
+function isStaleInput(e: unknown) {
+  return /All inputs are spent|BadInputsUTxO/.test(String((e as Error)?.message ?? e));
+}
+
 async function main() {
   const [a, b, ...rest] = process.argv.slice(2);
   const cmd = commands[`${a} ${b}`];
@@ -544,7 +556,15 @@ async function main() {
     console.log(HELP);
     process.exit(a ? 2 : 0);
   }
-  await cmd(rest);
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await cmd!(rest);
+    } catch (e) {
+      if (!isStaleInput(e) || attempt >= 6) throw e;
+      console.error(`provider view is stale (attempt ${attempt}); re-reading chain state and rebuilding in 15 s`);
+      await new Promise((r) => setTimeout(r, 15_000));
+    }
+  }
 }
 
 main().catch((e) => die((e as Error).message?.split("\n")[0] ?? String(e)));
