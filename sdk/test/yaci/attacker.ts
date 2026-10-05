@@ -158,6 +158,17 @@ export function resign(cbor: string, keys: Key[]): string {
 
 export const SCRIPT_FAILURE = /CekError|PlutusFailure|ValidationTagMismatch|EvaluationFailure/;
 
-export async function attack(ctx: Ctx, a: Attack = {}) {
-  return submitRaw(await buildAttack(ctx, a));
+/**
+ * Build and submit an attack. With a context *factory*, a rejection for stale
+ * inputs (BadInputs / "already spent": the provider served an outdated UTxO,
+ * so no script ever ran) is retried with fresh state; any other outcome,
+ * including acceptance, is returned as is.
+ */
+export async function attack(ctx: Ctx | (() => Promise<Ctx>), a: Attack = {}) {
+  for (let attempt = 1; ; attempt++) {
+    const c = typeof ctx === "function" ? await ctx() : ctx;
+    const res = await submitRaw(await buildAttack(c, a));
+    if (res.ok || typeof ctx !== "function" || attempt >= 6 || !/BadInputsUTxO|All inputs are spent/.test(res.body)) return res;
+    await new Promise((r) => setTimeout(r, 10_000));
+  }
 }

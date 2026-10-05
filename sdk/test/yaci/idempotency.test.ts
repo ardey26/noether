@@ -7,13 +7,13 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { buildAgentSpend } from "../../src/agent.js";
 import { awaitSettled } from "../../src/chain.js";
 import { assemble, witness } from "../../src/cosign.js";
-import { FileJournal, NeverLands, blockfrostQuery, submitResolving, txFacts } from "../../src/idempotency.js";
+import { FileJournal, NeverLands, submitResolving, txFacts } from "../../src/idempotency.js";
 import { payOnce } from "../../src/pay.js";
-import { ADA, STORE, grant, readAllowance, readConfig, submitRaw, yaciWorld, type World } from "./world.js";
+import { ADA, chainQuery, grant, readAllowance, readConfig, submitRaw, yaciWorld, type World } from "./world.js";
 
 let w: World;
 let unit: string;
-const q = blockfrostQuery(STORE, "yaci");
+const q = chainQuery();
 const journalPath = () => join(mkdtempSync(join(tmpdir(), "journal-")), "intents.jsonl");
 
 async function paymentsOf(lovelace: bigint) {
@@ -46,7 +46,7 @@ async function buildSigned(intentId: string, lovelace: bigint, validityMs?: numb
 beforeAll(async () => {
   w = await yaciWorld();
   unit = await grant(w);
-}, 300_000);
+}, 1_200_000);
 
 describe("idempotent agent payments", () => {
   it("re-running a paid intent never pays again (journal, then chain with the journal lost)", async () => {

@@ -15,6 +15,9 @@ import {
   readConfig,
   refHolderScript,
   signSubmit,
+  waitForConfig,
+  chainQuery,
+  TARGET,
   sleep,
   submitRaw,
   treasuryUtxos,
@@ -38,6 +41,9 @@ async function ctx(u = unit): Promise<Ctx> {
   };
 }
 
+/** Every tx we track needs a TTL (fate checks); 90 s fits the devnet horizon and preprod. */
+const ttl = () => w.lucid.slotToUnixTime(w.lucid.currentSlot()) + 90_000;
+
 /** The ledger's error constructor names, without the source-location noise. */
 const reasonOf = (body: string) =>
   (body.match(/"error":\[(.*?)\],"kind"/)?.[1] ?? body).replace(/SrcLoc \{[^}]*\}/g, "").slice(0, 400);
@@ -56,7 +62,7 @@ beforeAll(async () => {
   w = await yaciWorld();
   setPayee(w.payee.address);
   unit = await grant(w);
-}, 180_000);
+}, 1_200_000);
 
 describe("baseline", () => {
   it("the attacker builder's honest spend is accepted (harness sanity)", async () => {
@@ -68,14 +74,14 @@ describe("baseline", () => {
 });
 
 describe("value", () => {
-  it("V1 fee above max_fee (5 ADA)", async () => expectScriptFailure(await attack(await ctx(), { fee: 6n * ADA })));
+  it("V1 fee above max_fee (5 ADA)", async () => expectScriptFailure(await attack(() => ctx(), { fee: 6n * ADA })));
   it("V2 change to the agent's own address", async () =>
-    await expectScriptFailure(await attack(await ctx(), { extraOutputs: [{ to: w.agent.address, assets: { lovelace: 3n * ADA } }] })));
+    await expectScriptFailure(await attack(() => ctx(), { extraOutputs: [{ to: w.agent.address, assets: { lovelace: 3n * ADA } }] })));
   it("V3 mint inside an agent spend", async () => {
     const policy = scriptFromNative({ type: "sig", keyHash: w.agent.pkh });
     const tok = mintingPolicyToId(policy) + "6a756e6b";
     await expectScriptFailure(
-      await attack(await ctx(), {
+      await attack(() => ctx(), {
         mint: { assets: { [tok]: 1n }, policy },
         payments: [{ to: w.payee.address, assets: { lovelace: 5n * ADA, [tok]: 1n } }],
       }),
@@ -84,7 +90,7 @@ describe("value", () => {
   it("V3 a certificate riding along (deposit paid from the allowance)", async () => {
     // Leftover covers the stake deposit plus a real fee under max_fee; the datum is honest.
     await expectScriptFailure(
-      await attack(await ctx(), {
+      await attack(() => ctx(), {
         fee: 4_500_000n,
         tweak: (b) => b.registerStake(rewardAddr()),
         requiredSigners: [w.agent.pkh, w.stakeKey.pkh],
@@ -97,14 +103,23 @@ describe("value", () => {
     const policy = scriptFromNative({ type: "sig", keyHash: a.pkh });
     const junk = mintingPolicyToId(policy) + "6a756e6b";
     lucid.selectWallet.fromPrivateKey(a.privateKey);
-    const mint = await lucid.newTx().mintAssets({ [junk]: 5n }).attach.MintingPolicy(policy).complete();
-    await signSubmit(lucid, mint, [a]);
+    await signSubmit(
+      lucid,
+      () => lucid.newTx().mintAssets({ [junk]: 5n }).attach.MintingPolicy(policy).validTo(ttl()).complete(),
+      [a],
+    );
     // Owners top up the allowance with the junk token by mistake.
-    const before = await ctx();
-    const edit = await owner.editAllowance(lucid, vault, before.config, before.allowance, before.allowance.datum, [a.pkh, b.pkh], { [junk]: 5n });
-    await signSubmit(lucid, edit, [a, b]);
+    await signSubmit(
+      lucid,
+      async () => {
+        const before = await ctx();
+        lucid.selectWallet.fromPrivateKey(a.privateKey);
+        return owner.editAllowance(lucid, vault, before.config, before.allowance, before.allowance.datum, [a.pkh, b.pkh], { [junk]: 5n });
+      },
+      [a, b],
+    );
     await expectScriptFailure(
-      await attack(await ctx(), { payments: [{ to: w.payee.address, assets: { lovelace: 5n * ADA, [junk]: 5n } }] }),
+      await attack(() => ctx(), { payments: [{ to: w.payee.address, assets: { lovelace: 5n * ADA, [junk]: 5n } }] }),
     );
   });
 });
@@ -118,7 +133,7 @@ function rewardAddr() {
 describe("utxo structure", () => {
   it("U1 an extra agent-wallet input", async () =>
     await expectScriptFailure(
-      await attack(await ctx(), {
+      await attack(() => ctx(), {
         extraInputs: [{ utxos: [w.spare] }],
         extraOutputs: [{ to: w.agent.address, assets: { lovelace: 30n * ADA } }],
       }),
@@ -126,7 +141,7 @@ describe("utxo structure", () => {
   it("U1 a treasury input smuggled in with the agent redeemer", async () => {
     const [t] = await treasuryUtxos(w.lucid, w.vault);
     await expectScriptFailure(
-      await attack(await ctx(), {
+      await attack(() => ctx(), {
         extraInputs: [{ utxos: [t!], redeemer: spendRedeemer({ kind: "AgentSpend", intentHash: "1e".repeat(32) }) }],
         extraOutputs: [{ to: w.payee.address, assets: t!.assets }],
         fee: 2_500_000n,
@@ -145,14 +160,14 @@ describe("utxo structure", () => {
     )
       .to_address()
       .to_bech32();
-    await expectScriptFailure(await attack(await ctx(), { continuing: { address: withStake } }));
+    await expectScriptFailure(await attack(() => ctx(), { continuing: { address: withStake } }));
   });
   it("U3 a planted look-alike allowance (perfect datum, no token)", async () => {
     const c = await ctx();
     w.lucid.selectWallet.fromPrivateKey(w.stranger.privateKey);
     const plant = await w.lucid
       .newTx()
-      .pay.ToContract(w.vault.address, { kind: "inline", value: allowanceToData(c.allowance.datum) }, { lovelace: 40n * ADA })
+      .pay.ToContract(w.vault.address, { kind: "inline", value: allowanceToData(c.allowance.datum) }, { lovelace: 15n * ADA })
       .complete();
     const h = await (await plant.sign.withWallet().complete()).submit();
     await awaitIndexed(w.lucid, h);
@@ -170,24 +185,25 @@ describe("utxo structure", () => {
     await expectScriptFailure(await attack(c, { continuing: { datum: allowanceToData(big) } }));
   });
   it("U4 a reference script on the continuing output", async () =>
-    await expectScriptFailure(await attack(await ctx(), { refScriptOnContinuing: refHolderScript() })));
-  it("U5 continuing datum by hash", async () => expectScriptFailure(await attack(await ctx(), { continuing: { datum: "hash" } })));
+    await expectScriptFailure(await attack(() => ctx(), { refScriptOnContinuing: refHolderScript() })));
+  it("U5 continuing datum by hash", async () => expectScriptFailure(await attack(() => ctx(), { continuing: { datum: "hash" } })));
 });
 
 describe("time", () => {
-  it("T1 no upper bound", async () => expectScriptFailure(await attack(await ctx(), { validity: { to: null } })));
-  it("T1 no lower bound", async () => expectScriptFailure(await attack(await ctx(), { validity: { from: null } })));
+  it("T1 no upper bound", async () => expectScriptFailure(await attack(() => ctx(), { validity: { to: null } })));
+  it("T1 no lower bound", async () => expectScriptFailure(await attack(() => ctx(), { validity: { from: null } })));
   it("T2 validity wider than max_tx_validity_ms (2 min)", async () => {
     const now = Date.now();
     const from = w.lucid.slotToUnixTime(w.lucid.unixTimeToSlot(now - 30_000));
-    await expectScriptFailure(await attack(await ctx(), { validity: { from, to: from + 200_000 } }));
+    await expectScriptFailure(await attack(() => ctx(), { validity: { from, to: from + 200_000 } }));
   });
   it("T2 a range straddling a window boundary (short-period allowance)", async () => {
     const now = BigInt(Date.now());
     // 60 s windows starting 45 s ago: [now-45s, now+15s) is window 0.
     const short = await grant(w, { periodMs: 60_000n, windowStart: now - 45_000n });
-    const from = w.lucid.slotToUnixTime(w.lucid.unixTimeToSlot(Date.now() - 5_000));
     const c = await ctx(short);
+    // Validity is computed only now, right before submitting (provider reads can be slow).
+    const from = w.lucid.slotToUnixTime(w.lucid.unixTimeToSlot(Date.now() - 5_000));
     const ws = Number(c.allowance.datum.windowStart);
     const k = Math.floor((from - ws) / 60_000);
     const boundary = ws + (k + 1) * 60_000;
@@ -204,16 +220,16 @@ describe("destinations", () => {
     )
       .to_address()
       .to_bech32();
-    await expectScriptFailure(await attack(await ctx(), { payments: [{ to: swapped, assets: { lovelace: 5n * ADA } }] }));
+    await expectScriptFailure(await attack(() => ctx(), { payments: [{ to: swapped, assets: { lovelace: 5n * ADA } }] }));
   });
   it("D1 allowed payment key with the stake part removed", async () => {
     const bare = CML.EnterpriseAddress.new(0, CML.Credential.new_pub_key(CML.Ed25519KeyHash.from_hex(w.payee2.pkh)))
       .to_address()
       .to_bech32();
-    await expectScriptFailure(await attack(await ctx(), { payments: [{ to: bare, assets: { lovelace: 5n * ADA } }] }));
+    await expectScriptFailure(await attack(() => ctx(), { payments: [{ to: bare, assets: { lovelace: 5n * ADA } }] }));
   });
   it("D1 a stranger", async () =>
-    await expectScriptFailure(await attack(await ctx(), { payments: [{ to: w.stranger.address, assets: { lovelace: 5n * ADA } }] })));
+    await expectScriptFailure(await attack(() => ctx(), { payments: [{ to: w.stranger.address, assets: { lovelace: 5n * ADA } }] })));
 });
 
 describe("config, roles, signatures", () => {
@@ -241,7 +257,7 @@ describe("config, roles, signatures", () => {
     // Collateral from owner a, so the agent's key is genuinely absent from the tx.
     const col = (await w.lucid.utxosAt(w.a.address)).find((u) => Object.keys(u.assets).length === 1 && !u.scriptRef)!;
     await expectScriptFailure(
-      await attack(await ctx(), {
+      await attack(() => ctx(), {
         requiredSigners: [w.a.pkh, w.b.pkh, w.c.pkh],
         signWith: [w.a, w.b, w.c],
         collateral: { address: w.a.address, utxo: col },
@@ -250,7 +266,7 @@ describe("config, roles, signatures", () => {
   });
   it("co-signed spend with only one owner", async () =>
     await expectScriptFailure(
-      await attack(await ctx(), {
+      await attack(() => ctx(), {
         redeemer: spendRedeemer({ kind: "CoSignedSpend", intentHash: "1e".repeat(32) }),
         payments: [{ to: w.stranger.address, assets: { lovelace: 60n * ADA } }],
         requiredSigners: [w.agent.pkh, w.a.pkh],
@@ -258,7 +274,7 @@ describe("config, roles, signatures", () => {
       }),
     ));
   it("intent hash of the wrong length", async () =>
-    await expectScriptFailure(await attack(await ctx(), { redeemer: spendRedeemer({ kind: "AgentSpend", intentHash: "1e1e" }) })));
+    await expectScriptFailure(await attack(() => ctx(), { redeemer: spendRedeemer({ kind: "AgentSpend", intentHash: "1e1e" }) })));
 });
 
 describe("infra and ledger rules", () => {
@@ -298,7 +314,19 @@ describe("infra and ledger rules", () => {
     const to = w.lucid.slotToUnixTime(w.lucid.unixTimeToSlot(Date.now() + 8_000));
     const cbor = await buildAttack(c, { validity: { from, to } });
     await sleep(12_000);
-    await expectLedgerFailure(await submitRaw(cbor), /OutsideValidityInterval/);
+    const res = await submitRaw(cbor);
+    if (!res.ok) {
+      await expectLedgerFailure(res, /OutsideValidityInterval/);
+    } else {
+      // On slow-block networks the mempool checks against the tip's slot, which
+      // can lag wall-clock by a block (~20 s on preprod), so it may *accept* a tx
+      // past its TTL. The ledger property is about inclusion: it never lands.
+      expect(TARGET).toBe("preprod");
+      const hash = JSON.parse(res.body);
+      await sleep(120_000);
+      expect(await chainQuery().txExists(hash)).toBe(false);
+      expect((await readAllowance(w.lucid, w.vault, unit)).utxo.txHash).toBe(c.allowance.utxo.txHash);
+    }
   });
 });
 
@@ -306,21 +334,35 @@ describe("pause, races, malformed datums", () => {
   it("D4 stale config + pause: a spend signed before a pause can't land after it", async () => {
     const c = await ctx();
     const preSigned = await buildAttack(c);
-    w.lucid.selectWallet.fromPrivateKey(w.b.privateKey);
-    await signSubmit(w.lucid, await owner.pause(w.lucid, w.vault, c.config, [w.b.pkh, w.c.pkh]), [w.b, w.c]);
+    const paused = await signSubmit(
+      w.lucid,
+      async () => {
+        w.lucid.selectWallet.fromPrivateKey(w.b.privateKey);
+        return owner.pause(w.lucid, w.vault, await readConfig(w.lucid, w.vault), [w.b.pkh, w.c.pkh]);
+      },
+      [w.b, w.c],
+    );
     await expectLedgerFailure(await submitRaw(preSigned), /BadInputs|UTxO|unknown/i);
+    await waitForConfig(w.lucid, w.vault, paused);
     // And a fresh spend referencing the paused config fails in the script.
-    await expectScriptFailure(await attack(await ctx()));
+    await expectScriptFailure(await attack(() => ctx()));
     // Co-signed spends are paused too.
     await expectScriptFailure(
-      await attack(await ctx(), {
+      await attack(() => ctx(), {
         redeemer: spendRedeemer({ kind: "CoSignedSpend", intentHash: "1e".repeat(32) }),
         requiredSigners: [w.agent.pkh, w.a.pkh, w.b.pkh],
         signWith: [w.agent, w.a, w.b],
       }),
     );
-    w.lucid.selectWallet.fromPrivateKey(w.b.privateKey);
-    await signSubmit(w.lucid, await owner.unpause(w.lucid, w.vault, await readConfig(w.lucid, w.vault), [w.a.pkh, w.b.pkh]), [w.a, w.b]);
+    const unpaused = await signSubmit(
+      w.lucid,
+      async () => {
+        w.lucid.selectWallet.fromPrivateKey(w.b.privateKey);
+        return owner.unpause(w.lucid, w.vault, await readConfig(w.lucid, w.vault), [w.a.pkh, w.b.pkh]);
+      },
+      [w.a, w.b],
+    );
+    await waitForConfig(w.lucid, w.vault, unpaused);
   });
 
   it("R2 revoke and spend racing for the same UTxO: exactly one lands", async () => {
@@ -338,22 +380,30 @@ describe("pause, races, malformed datums", () => {
 
   it("U6 owner-created allowance with a garbage datum: agent can't spend, owners reclaim", async () => {
     const { lucid, vault, a, b } = w;
-    lucid.selectWallet.fromPrivateKey(a.privateKey);
-    const cfg = await readConfig(lucid, vault);
-    const seed = (await lucid.wallet().getUtxos()).find((u) => Object.keys(u.assets).length === 1)!;
     const { allowanceName } = await import("../../src/vault.js");
-    const u = vault.hash + allowanceName({ txHash: seed.txHash, outputIndex: seed.outputIndex });
-    const tx = await lucid
-      .newTx()
-      .collectFrom([seed])
-      .readFrom([cfg.utxo])
-      .mintAssets({ [u]: 1n }, mintRedeemer("ManageAllowances"))
-      .attach.MintingPolicy(vault.script)
-      .pay.ToContract(vault.address, { kind: "inline", value: Data.to(42n) }, { lovelace: 20n * ADA, [u]: 1n })
-      .addSignerKey(a.pkh)
-      .addSignerKey(b.pkh)
-      .complete();
-    await signSubmit(lucid, tx, [a, b]);
+    let u = "";
+    // Built as a closure so a stale wallet view can be rebuilt (fate-checked).
+    await signSubmit(
+      lucid,
+      async () => {
+        lucid.selectWallet.fromPrivateKey(a.privateKey);
+        const cfg = await readConfig(lucid, vault);
+        const seed = (await lucid.wallet().getUtxos()).find((x) => Object.keys(x.assets).length === 1)!;
+        u = vault.hash + allowanceName({ txHash: seed.txHash, outputIndex: seed.outputIndex });
+        return lucid
+          .newTx()
+          .collectFrom([seed])
+          .readFrom([cfg.utxo])
+          .mintAssets({ [u]: 1n }, mintRedeemer("ManageAllowances"))
+          .attach.MintingPolicy(vault.script)
+          .pay.ToContract(vault.address, { kind: "inline", value: Data.to(42n) }, { lovelace: 20n * ADA, [u]: 1n })
+          .addSignerKey(a.pkh)
+          .addSignerKey(b.pkh)
+          .validTo(ttl())
+          .complete();
+      },
+      [a, b],
+    );
     const raw = (await lucid.utxosAtWithUnit(vault.address, u))[0]!;
     // Agent path: decoding fails on-chain.
     const fakeCtx = {
@@ -362,26 +412,32 @@ describe("pause, races, malformed datums", () => {
     };
     await expectScriptFailure(await attack(fakeCtx, { continuing: { datum: Data.to(42n), assets: { lovelace: 20n * ADA - 6_500_000n, [u]: 1n } } }));
     // Owner reclaim never decodes the datum.
-    lucid.selectWallet.fromPrivateKey(a.privateKey);
-    const reclaim = await owner.revokeAllowance(lucid, vault, await readConfig(lucid, vault), { utxo: raw, unit: u }, [a.pkh, b.pkh]);
-    await signSubmit(lucid, reclaim, [a, b]);
+    await signSubmit(
+      lucid,
+      async () => {
+        lucid.selectWallet.fromPrivateKey(a.privateKey);
+        return owner.revokeAllowance(lucid, vault, await readConfig(lucid, vault), { utxo: raw, unit: u }, [a.pkh, b.pkh]);
+      },
+      [a, b],
+    );
     expect(await lucid.utxosAtWithUnit(vault.address, u)).toHaveLength(0);
   });
 
   it("D6 agent key added as an owner: the agent can no longer spend", async () => {
     const { lucid, vault, a, b, c: cc, agent } = w;
-    lucid.selectWallet.fromPrivateKey(a.privateKey);
-    const cfg = await readConfig(lucid, vault);
-    await signSubmit(lucid, await owner.rotateOwners(lucid, vault, cfg, [a.pkh, b.pkh, cc.pkh, agent.pkh], 2n, [a.pkh, b.pkh]), [a, b]);
-    await expectScriptFailure(await attack(await ctx()));
+    const rotate = (owners: string[]) => async () => {
+      lucid.selectWallet.fromPrivateKey(a.privateKey);
+      return owner.rotateOwners(lucid, vault, await readConfig(lucid, vault), owners, 2n, [a.pkh, b.pkh]);
+    };
+    await waitForConfig(lucid, vault, await signSubmit(lucid, rotate([a.pkh, b.pkh, cc.pkh, agent.pkh]), [a, b]));
+    await expectScriptFailure(await attack(() => ctx()));
     // Honest SDK refuses too.
     const x = await ctx();
     lucid.selectWallet.fromAddress(agent.address, [w.collateral]);
     await expect(
       buildAgentSpend({ ...x, payments: [{ to: w.payee.address, assets: { lovelace: 1n * ADA } }], intentId: crypto.randomUUID(), purpose: "x" }),
     ).rejects.toMatchObject({ code: "AGENT_IS_OWNER" });
-    lucid.selectWallet.fromPrivateKey(a.privateKey);
-    await signSubmit(lucid, await owner.rotateOwners(lucid, vault, await readConfig(lucid, vault), [a.pkh, b.pkh, cc.pkh], 2n, [a.pkh, b.pkh]), [a, b]);
+    await waitForConfig(lucid, vault, await signSubmit(lucid, rotate([a.pkh, b.pkh, cc.pkh]), [a, b]));
   });
 });
 
