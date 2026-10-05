@@ -43,6 +43,16 @@ async function ctx(u = unit): Promise<Ctx> {
   };
 }
 
+/** Poll a condition that must become true once the provider catches up (bounded: 5 min). */
+async function eventually(cond: () => Promise<boolean>, timeoutMs = 300_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (await cond().catch(() => false)) return;
+    await sleep(5000);
+  }
+  throw new Error("condition not met before timeout (provider lag or a real failure)");
+}
+
 /** Every tx we track needs a TTL (fate checks); 90 s fits the devnet horizon and preprod. */
 const ttl = () => w.lucid.slotToUnixTime(w.lucid.currentSlot()) + 90_000;
 
@@ -120,6 +130,9 @@ describe("value", () => {
       },
       [a, b],
     );
+    // Precondition: the provider must already serve the topped-up allowance (its asset
+    // index can lag the chain); otherwise the attack would be built from a stale UTxO.
+    await eventually(async () => (await ctx()).allowance.utxo.assets[junk] === 5n);
     await expectScriptFailure(
       await attack(() => ctx(), { payments: [{ to: w.payee.address, assets: { lovelace: 5n * ADA, [junk]: 5n } }] }),
     );
@@ -422,7 +435,8 @@ describe("pause, races, malformed datums", () => {
       },
       [a, b],
     );
-    expect(await lucid.utxosAtWithUnit(vault.address, u)).toHaveLength(0);
+    // The reclaim landed; the provider's per-asset index may take a moment to drop it.
+    await eventually(async () => (await lucid.utxosAtWithUnit(vault.address, u)).length === 0);
   });
 
   it("D6 agent key added as an owner: the agent can no longer spend", async () => {
