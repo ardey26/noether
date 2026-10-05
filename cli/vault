@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# CLI entry point: runs the TypeScript sources with the SDK's pinned toolchain.
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+exec "$ROOT/sdk/node_modules/.bin/tsx" "$ROOT/cli/src/main.ts" "$@"
