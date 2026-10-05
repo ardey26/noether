@@ -1,1 +1,1 @@
-{ "name": "@noether/agent", "private": true, "type": "module", "description": "LLM accounts-payable agent driving the vault through the signer daemon" }
+{ "name": "@noether/agent", "private": true, "license": "Apache-2.0", "type": "module", "description": "LLM accounts-payable agent driving the vault through the signer daemon" }

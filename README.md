@@ -292,3 +292,7 @@ Test counts at the time of writing:
 | CLI smoke checks | 19 |
 | LLM agent end-to-end (devnet) | safety checks pass; escalation co-signed |
 | Preprod demo (all links in `demo/RESULTS.md`) | 17 txs, 11 refusals, including two LLM agent runs |
+
+## License
+
+Apache-2.0. See `LICENSE`.

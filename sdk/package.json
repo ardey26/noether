@@ -2,6 +2,7 @@
   "name": "@noether/vault-sdk",
   "version": "0.1.0",
   "private": true,
+  "license": "Apache-2.0",
   "type": "module",
   "description": "Agent Allowance Vault SDK: owner side, agent side, co-signing, signer daemon",
   "scripts": {
