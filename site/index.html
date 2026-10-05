@@ -1,0 +1,323 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>noether: give your agent a budget, not your keys</title>
+<meta name="description" content="noether is a Cardano vault where a team of owners gives each AI agent a capped spending allowance, enforced on-chain.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --lichen: #E8EEE7;
+    --lichen-deep: #DCE5DB;
+    --ink: #1C2A31;
+    --ink-soft: #4C5C5A;
+    --teal: #1F6B66;
+    --teal-deep: #164F4B;
+    --amber: #D99A1E;
+    --refuse: #A8323F;
+    --line: #C3CFC2;
+    --measure: 66ch;
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--lichen);
+    color: var(--ink);
+    font: 400 1.0625rem/1.6 "Schibsted Grotesk", system-ui, sans-serif;
+  }
+  a { color: var(--teal-deep); text-underline-offset: 0.2em; }
+  a:focus-visible, button:focus-visible { outline: 3px solid var(--amber); outline-offset: 3px; border-radius: 4px; }
+  .wrap { width: min(1120px, 100% - 2rem); margin-inline: auto; }
+  /* grid and list children may shrink below their content; long code scrolls inside its own box */
+  .hero > *, .skill > *, .roles > *, .steps > li, .code { min-width: 0; max-width: 100%; }
+
+  /* top bar */
+  .bar { display: flex; justify-content: space-between; align-items: center; padding: 1.4rem 0; }
+  .wordmark { font-weight: 800; font-size: 1.35rem; letter-spacing: -0.03em; color: var(--ink); text-decoration: none; }
+  .wordmark span { color: var(--teal); }
+  .bar nav { display: flex; gap: 1.5rem; font-weight: 500; }
+  .bar nav a { color: var(--ink); text-decoration: none; }
+  .bar nav a:hover { color: var(--teal); }
+
+  /* hero */
+  .hero { display: grid; grid-template-columns: 1.05fr 0.95fr; gap: 3.5rem; align-items: center; padding: 3.5rem 0 4.5rem; }
+  h1 {
+    font-weight: 800; font-size: clamp(2.6rem, 5.4vw, 4.4rem); line-height: 1.02;
+    letter-spacing: -0.045em; margin: 0 0 1.4rem; max-width: 11ch;
+  }
+  .lede { font-size: 1.2rem; color: var(--ink-soft); max-width: 46ch; margin: 0 0 2rem; }
+  .actions { display: flex; gap: 0.8rem; flex-wrap: wrap; }
+  .btn {
+    display: inline-block; padding: 0.8rem 1.25rem; border-radius: 6px; font-weight: 700;
+    text-decoration: none; border: 2px solid var(--ink);
+  }
+  .btn.primary { background: var(--ink); color: var(--lichen); }
+  .btn.primary:hover { background: var(--teal-deep); border-color: var(--teal-deep); }
+  .btn.secondary { color: var(--ink); }
+  .btn.secondary:hover { background: var(--lichen-deep); }
+
+  /* the allowance meter: the one bold element */
+  .meter {
+    background: var(--ink); color: var(--lichen); border-radius: 14px; padding: 1.8rem 1.8rem 1.5rem;
+  }
+  .meter-head { margin-bottom: 1.1rem; }
+  .meter-head strong { display: block; font-size: 1.05rem; }
+  .meter-head span { color: #A9B8B4; font-size: 0.95rem; }
+  .track { position: relative; height: 54px; background: #2B3B42; border-radius: 6px; overflow: visible; }
+  .track::after { /* the cap line */
+    content: ""; position: absolute; top: -10px; bottom: -10px; right: 0; width: 3px; background: var(--lichen); border-radius: 2px;
+  }
+  .seg { position: absolute; top: 0; bottom: 0; background: var(--amber); border-right: 2px solid var(--ink); }
+  .seg.s1 { left: 0; width: 16%; border-radius: 6px 0 0 6px; }
+  .seg.s2 { left: 16%; width: 32%; }
+  .seg.s3 { left: 48%; width: 36%; }
+  .seg.s4 { left: 84%; width: 20%; background: var(--refuse); border-right: 0; border-radius: 0 6px 6px 0; opacity: 0; }
+  .ledger { list-style: none; margin: 1.4rem 0 0; padding: 0; font-size: 0.98rem; }
+  .ledger li { display: grid; grid-template-columns: 1fr auto auto; gap: 1rem; padding: 0.5rem 0; border-top: 1px solid #33464E; }
+  .ledger .amt { font-variant-numeric: tabular-nums; }
+  .ledger .st { color: #9FD8C9; min-width: 4.5rem; text-align: right; }
+  .ledger li.no .st { color: #F2A3AC; }
+  .ledger li.no .what { color: #F2A3AC; }
+  .meter-foot { margin: 1rem 0 0; color: #A9B8B4; font-size: 0.92rem; }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .seg.s1, .seg.s2, .seg.s3 { transform-origin: left; transform: scaleX(0); animation: grow 0.55s cubic-bezier(.2,.7,.2,1) forwards; }
+    .seg.s1 { animation-delay: 0.4s; }
+    .seg.s2 { animation-delay: 1.0s; }
+    .seg.s3 { animation-delay: 1.6s; }
+    .seg.s4 { transform-origin: left; animation: refuse 1.5s ease-out 2.3s forwards; }
+    .ledger li { opacity: 0; animation: show 0.3s ease-out forwards; }
+    .ledger li:nth-child(1) { animation-delay: 0.6s; }
+    .ledger li:nth-child(2) { animation-delay: 1.2s; }
+    .ledger li:nth-child(3) { animation-delay: 1.8s; }
+    .ledger li:nth-child(4) { animation-delay: 3.1s; }
+    @keyframes grow { to { transform: scaleX(1); } }
+    @keyframes show { to { opacity: 1; } }
+    @keyframes refuse {
+      0% { opacity: 1; transform: scaleX(0); }
+      35% { opacity: 1; transform: scaleX(1); }
+      48% { transform: scaleX(1) translateX(-3%); }
+      58% { transform: scaleX(1) translateX(2%); }
+      70% { opacity: 1; transform: scaleX(1); }
+      100% { opacity: 0.28; transform: scaleX(1); }
+    }
+  }
+  @media (prefers-reduced-motion: reduce) { .seg.s4 { opacity: 0.28; } }
+
+  /* sections */
+  section { padding: 3.5rem 0; border-top: 1px solid var(--line); }
+  h2 { font-weight: 800; font-size: clamp(1.7rem, 3vw, 2.3rem); letter-spacing: -0.03em; line-height: 1.1; margin: 0 0 1rem; }
+  h3 { font-weight: 700; font-size: 1.15rem; margin: 0 0 0.4rem; }
+  .sub { color: var(--ink-soft); max-width: var(--measure); margin: 0 0 2rem; }
+  .roles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2.5rem; max-width: 1000px; }
+  .roles p { margin: 0; color: var(--ink-soft); }
+
+  /* setup steps: a real sequence, so numbered */
+  .steps { list-style: none; counter-reset: step; margin: 0; padding: 0; max-width: 820px; }
+  .steps > li { counter-increment: step; position: relative; padding: 0 0 2.2rem 3.4rem; }
+  .steps > li::before {
+    content: counter(step); position: absolute; left: 0; top: -0.1rem; width: 2.2rem; height: 2.2rem; border-radius: 50%;
+    background: var(--teal); color: var(--lichen); font-weight: 700; display: grid; place-items: center;
+  }
+  .steps > li:not(:last-child)::after {
+    content: ""; position: absolute; left: calc(1.1rem - 1px); top: 2.4rem; bottom: 0.3rem; width: 2px; background: var(--line);
+  }
+  .steps p { margin: 0 0 0.8rem; color: var(--ink-soft); max-width: var(--measure); }
+  .code { position: relative; }
+  pre {
+    margin: 0; background: #F6F8F5; border: 1px solid var(--line); border-radius: 8px;
+    padding: 1rem 4.6rem 1rem 1.1rem; overflow-x: auto;
+    font: 400 0.88rem/1.6 "JetBrains Mono", ui-monospace, monospace; color: var(--ink);
+  }
+  .copy {
+    position: absolute; top: 0.55rem; right: 0.55rem; font: 600 0.8rem "Schibsted Grotesk", sans-serif;
+    background: var(--lichen-deep); color: var(--ink); border: 1px solid var(--line); border-radius: 5px; padding: 0.3rem 0.6rem; cursor: pointer;
+  }
+  .copy:hover { background: var(--line); }
+  @media (max-width: 600px) {
+    .code { display: flex; flex-direction: column-reverse; align-items: flex-end; gap: 0.4rem; }
+    .code pre { align-self: stretch; padding-right: 1.1rem; }
+    .copy { position: static; }
+  }
+  .copy[data-done] { background: var(--teal); color: var(--lichen); border-color: var(--teal); }
+  code.inline { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 0.9em; background: var(--lichen-deep); padding: 0.1em 0.35em; border-radius: 4px; }
+
+  .skill { display: grid; grid-template-columns: 1fr 1.1fr; gap: 3rem; align-items: start; }
+  .guarantees { columns: 2; column-gap: 3rem; padding-left: 1.2rem; max-width: 1000px; margin: 0; }
+  .guarantees li { break-inside: avoid; margin-bottom: 0.9rem; color: var(--ink-soft); }
+  .guarantees strong { color: var(--ink); }
+  .status {
+    border-left: 4px solid var(--refuse); padding: 0.4rem 0 0.4rem 1.1rem; max-width: var(--measure); margin: 2.4rem 0 0;
+  }
+  footer { padding: 2.5rem 0 3rem; border-top: 1px solid var(--line); color: var(--ink-soft); display: flex; justify-content: space-between; flex-wrap: wrap; gap: 1rem; }
+
+  @media (max-width: 420px) { .bar nav a[href="#skill"] { display: none; } }
+  @media (max-width: 860px) {
+    .hero, .skill { grid-template-columns: 1fr; gap: 2.5rem; }
+    .roles { grid-template-columns: 1fr; gap: 1.6rem; }
+    .guarantees { columns: 1; }
+    .bar nav { gap: 1rem; font-size: 0.95rem; }
+    .hero { padding: 2rem 0 3rem; }
+    .meter { padding: 1.4rem 1.2rem 1.2rem; }
+    .ledger li { gap: 0.6rem; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="bar">
+    <a class="wordmark" href="#">noether<span>.</span></a>
+    <nav aria-label="Main">
+      <a href="#setup">Set up</a>
+      <a href="#skill">Agent skill</a>
+      <a href="https://github.com/ardey26/noether">GitHub</a>
+    </nav>
+  </header>
+
+  <main>
+    <div class="hero">
+      <div>
+        <h1>Give your agent a budget, not your keys.</h1>
+        <p class="lede">noether is a Cardano vault for AI agents. Your team sets each agent's spending limits and allowed payees. The agent pays on its own inside them, and the chain refuses everything else.</p>
+        <div class="actions">
+          <a class="btn primary" href="#setup">Set up a vault</a>
+          <a class="btn secondary" href="https://github.com/ardey26/noether">Read the code</a>
+        </div>
+      </div>
+
+      <figure class="meter" aria-label="Example: an agent's daily budget of 25 tADA. Three invoices paid, a fourth refused for going over the budget.">
+        <div class="meter-head"><strong>Today's allowance</strong><span>25 tADA a day, 10 per payment</span></div>
+        <div class="track" aria-hidden="true">
+          <div class="seg s1"></div><div class="seg s2"></div><div class="seg s3"></div><div class="seg s4"></div>
+        </div>
+        <ol class="ledger">
+          <li><span class="what">Hosting, October</span><span class="amt">4 tADA</span><span class="st">paid</span></li>
+          <li><span class="what">API license</span><span class="amt">8 tADA</span><span class="st">paid</span></li>
+          <li><span class="what">Data feed</span><span class="amt">9 tADA</span><span class="st">paid</span></li>
+          <li class="no"><span class="what">Consulting</span><span class="amt">5 tADA</span><span class="st">refused</span></li>
+        </ol>
+        <figcaption class="meter-foot">The fourth payment would take the day to 26 tADA. The validator refuses it; no key or policy file is involved.</figcaption>
+      </figure>
+    </div>
+
+    <section aria-labelledby="how">
+      <h2 id="how">Three roles, one set of rules</h2>
+      <p class="sub">Limits live in the contract, so a compromised agent key or a prompt-injected model can't spend past them.</p>
+      <div class="roles">
+        <div><h3>Owners</h3><p>A team of keys, for example 2 of 3. They fund the treasury, grant each agent an allowance, approve anything bigger, and can pause every agent in one transaction.</p></div>
+        <div><h3>Agent</h3><p>Pays allowed payees on its own, within a per-payment cap and a budget that resets each period. Its key sits in a separate signer process, never inside the model.</p></div>
+        <div><h3>Chain</h3><p>Checks every payment: the amount, the payee's exact address, the fee, the time window. Payments over the limits need the owners' signatures in the same transaction.</p></div>
+      </div>
+    </section>
+
+    <section id="setup" aria-labelledby="setup-h">
+      <h2 id="setup-h">Set up a vault on preprod</h2>
+      <p class="sub">About fifteen minutes. You need Node 22+, a free Blockfrost preprod project id, and test ADA from the Cardano faucet.</p>
+      <ol class="steps">
+        <li>
+          <h3>Get the code</h3>
+          <p>The Aiken compiler installs itself, pinned and checksum-verified, the first time you build.</p>
+          <div class="code"><pre><code>git clone https://github.com/ardey26/noether && cd noether
+(cd sdk && npm ci)
+scripts/aiken.sh build && scripts/aiken.sh check</code></pre><button class="copy" type="button">Copy</button></div>
+        </li>
+        <li>
+          <h3>Point it at preprod</h3>
+          <div class="code"><pre><code>export VAULT_NETWORK=Preprod
+export BLOCKFROST_PROJECT_ID=preprod...
+export VAULT_HOME=.vault</code></pre><button class="copy" type="button">Copy</button></div>
+        </li>
+        <li>
+          <h3>Create keys and fund the first owner</h3>
+          <p>Send test ADA from the <a href="https://docs.cardano.org/cardano-testnets/tools/faucet">preprod faucet</a> to the address <code class="inline">keys show owner_a</code> prints.</p>
+          <div class="code"><pre><code>for k in owner_a owner_b owner_c agent; do cli/vault keys gen $k; done
+cli/vault keys show owner_a</code></pre><button class="copy" type="button">Copy</button></div>
+        </li>
+        <li>
+          <h3>Create the vault</h3>
+          <p>Three owners, any two can act. Rotating owners later never changes the vault's address.</p>
+          <div class="code"><pre><code>cli/vault vault create --owners owner_a,owner_b,owner_c --threshold 2 \
+  --max-validity 10m --payer owner_a
+cli/vault treasury fund --ada 150 --payer owner_a</code></pre><button class="copy" type="button">Copy</button></div>
+        </li>
+        <li>
+          <h3>Give your agent an allowance</h3>
+          <p>25 tADA a day, at most 10 per payment, only to the payees you list. Fees count toward the budget.</p>
+          <div class="code"><pre><code>cli/vault allowance grant --agent agent --dest &lt;payee address&gt; \
+  --cap lovelace:25:10 --period 1d --expires 30d --fund 60 \
+  --from-treasury --propose owner_a --sign owner_a,owner_b</code></pre><button class="copy" type="button">Copy</button></div>
+        </li>
+        <li>
+          <h3>Let the agent pay</h3>
+          <p>Start the signer that holds the agent's key, then pay with an invoice id. Paying the same id again returns "already paid" instead of a second payment.</p>
+          <div class="code"><pre><code>cli/vault signer start --key agent --allowance &lt;unit&gt; --dest &lt;payee address&gt; --socket .vault/signer.sock &
+cli/vault agent spend &lt;unit&gt; --to &lt;payee address&gt; --ada 4 --intent-id INV-1001 \
+  --purpose "Hosting, October" --signer-socket .vault/signer.sock</code></pre><button class="copy" type="button">Copy</button></div>
+        </li>
+      </ol>
+    </section>
+
+    <section id="skill" aria-labelledby="skill-h">
+      <div class="skill">
+        <div>
+          <h2 id="skill-h">Or let your coding agent set it up</h2>
+          <p class="sub">The repository ships an agent skill: setup, owner controls, and what to do when a payment is refused. It installs into Codex, Cursor, OpenCode and dozens of other coding agents that support skills.</p>
+        </div>
+        <div>
+          <div class="code"><pre><code>npx skills add ardey26/noether</code></pre><button class="copy" type="button">Copy</button></div>
+          <p class="sub" style="margin-top:0.9rem">The repository is private for now. The command uses your existing GitHub access.</p>
+        </div>
+      </div>
+    </section>
+
+    <section aria-labelledby="control-h">
+      <h2 id="control-h">You keep the kill switch</h2>
+      <p class="sub">Owner actions need the owner threshold, here two of three.</p>
+      <div class="code" style="max-width:820px"><pre><code># stop every agent at once
+cli/vault config set --pause --propose owner_b --sign owner_b,owner_c
+# take one agent's allowance back into the treasury
+cli/vault allowance revoke &lt;unit&gt; --propose owner_b --sign owner_b,owner_c
+# approve a payment over the limits: the agent builds it, owners co-sign
+cli/vault agent overlimit &lt;unit&gt; --to &lt;address&gt; --ada 30 --intent-id INV-2001 --cosigners owner_a,owner_c --out tx.cbor</code></pre><button class="copy" type="button">Copy</button></div>
+    </section>
+
+    <section aria-labelledby="guar-h">
+      <h2 id="guar-h">What the contract guarantees</h2>
+      <ul class="guarantees">
+        <li><strong>Hard caps.</strong> Per payment and per period, per asset, with the fee included. The period resets on its own.</li>
+        <li><strong>Exact payees.</strong> Only addresses on the allowlist, stake part included.</li>
+        <li><strong>Nothing rides along.</strong> No minting, no extra tokens, no touching the treasury or another agent's allowance.</li>
+        <li><strong>Owners always win.</strong> Pause everything in one transaction, or revoke an allowance even if its data is corrupted.</li>
+        <li><strong>Roles stay separate.</strong> Owner signatures never count as the agent's, and an agent key can't also be an owner.</li>
+        <li><strong>An audit trail.</strong> Every agent payment commits to an intent record you can read back from the chain.</li>
+      </ul>
+      <p class="status"><strong>Status:</strong> working on Cardano preprod, not audited. Don't use it with real funds yet.</p>
+    </section>
+  </main>
+
+  <footer>
+    <span>noether, an allowance vault for AI agents on Cardano.</span>
+    <a href="https://github.com/ardey26/noether">github.com/ardey26/noether</a>
+  </footer>
+</div>
+<script>
+  for (const btn of document.querySelectorAll(".copy")) {
+    btn.addEventListener("click", async () => {
+      const text = btn.parentElement.querySelector("code").innerText;
+      try {
+        await navigator.clipboard.writeText(text);
+        btn.textContent = "Copied";
+        btn.dataset.done = "";
+        setTimeout(() => { btn.textContent = "Copy"; delete btn.dataset.done; }, 1600);
+      } catch {
+        btn.textContent = "Select and copy";
+      }
+    });
+  }
+</script>
+</body>
+</html>
