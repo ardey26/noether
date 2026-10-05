@@ -18,7 +18,8 @@ export type SignerPolicy = {
   slot: { zeroTime: number; zeroSlot: number; slotLength: number };
 };
 
-export type SignerState = { signed: { at: number; lovelace: bigint }[] };
+export type { SignerState } from "./state.js";
+import type { SignerState } from "./state.js";
 
 export type Decision = { ok: true; lovelaceOut: bigint } | { ok: false; reason: string };
 
