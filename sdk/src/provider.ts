@@ -42,7 +42,30 @@ async function ogmiosCostModels(url: string): Promise<Record<string, number[]> |
   });
 }
 
+/**
+ * Retry transient network failures ("fetch failed"), observed against public
+ * preprod endpoints. Resubmitting the same signed tx is harmless: a tx can
+ * only land once.
+ */
+let retrying = false;
+function installFetchRetry() {
+  if (retrying) return;
+  retrying = true;
+  const orig = globalThis.fetch;
+  globalThis.fetch = (async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+    for (let i = 0; ; i++) {
+      try {
+        return await orig(input, init);
+      } catch (e) {
+        if (i >= 4 || !(e instanceof TypeError)) throw e;
+        await new Promise((r) => setTimeout(r, 1000 * 2 ** i));
+      }
+    }
+  }) as typeof fetch;
+}
+
 export async function connect(cfg: ProviderConfig): Promise<LucidEvolution> {
+  installFetchRetry();
   if (cfg.devnet) {
     const devnet = await (await fetch(`${cfg.devnet.adminUrl}/admin/devnet`)).json();
     SLOT_CONFIG_NETWORK.Custom = { zeroTime: devnet.startTime * 1000, zeroSlot: 0, slotLength: devnet.slotLength * 1000 };

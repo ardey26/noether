@@ -23,8 +23,10 @@ export interface ChainQuery {
   txExists(hash: string): Promise<boolean>;
   /** Hash of the tx that consumed `txHash#index`, null if unspent, undefined if the provider can't tell. */
   spenderOf(txHash: string, index: number): Promise<string | null | undefined>;
-  /** Recent tx hashes involving `unit` (newest first), undefined if unsupported. */
-  assetTxs(unit: string, count: number): Promise<string[] | undefined>;
+  /** Inputs of `hash` with their assets, undefined if unknown to the provider. */
+  txInputs(hash: string): Promise<{ txHash: string; index: number; units: string[] }[] | undefined>;
+  /** POSIX ms of the provider's chain tip (latest block). Mempools judge validity against the tip, not the wall clock. */
+  tipMs(): Promise<number | undefined>;
   /** Metadata value under `label` for `hash`, undefined if none. */
   txMetadata(hash: string, label: number): Promise<unknown | undefined>;
 }
@@ -44,11 +46,21 @@ export function blockfrostQuery(url: string, projectId: string): ChainQuery {
       if (!out || !("consumed_by_tx" in out)) return undefined; // provider doesn't expose it
       return out.consumed_by_tx ?? null;
     },
-    async assetTxs(unit, count) {
-      const r = await get(`/assets/${unit}/transactions?order=desc&count=${count}`);
+    async txInputs(hash) {
+      const r = await get(`/txs/${hash}/utxos`);
       if (!r.ok) return undefined;
       const j = await r.json();
-      return Array.isArray(j) ? j.map((x: { tx_hash: string }) => x.tx_hash) : undefined;
+      return (j.inputs ?? []).map((i: { tx_hash: string; output_index: number; amount: { unit: string }[] }) => ({
+        txHash: i.tx_hash,
+        index: i.output_index,
+        units: (i.amount ?? []).map((a) => a.unit),
+      }));
+    },
+    async tipMs() {
+      const r = await get(`/blocks/latest`);
+      if (!r.ok) return undefined;
+      const j = await r.json();
+      return typeof j.time === "number" ? j.time * 1000 : undefined;
     },
     async txMetadata(hash, label) {
       const r = await get(`/txs/${hash}/metadata`);
@@ -140,25 +152,39 @@ export class MemoryJournal implements IntentJournal {
   }
 }
 
-/** Scan the allowance token's recent txs for an intent record with this id. */
+/**
+ * Look for an intent record with this id in the allowance's own history, by
+ * walking its UTxO lineage backwards: from the tx that produced the current
+ * allowance UTxO, through each tx's allowance input, to the previous one.
+ * This uses only the tx-level views (the ones `awaitSettled` and the
+ * cross-checked reads rely on), not a per-asset history index, which was
+ * observed to lag on preprod.
+ *
+ * A miss is NOT proof of absence: a provider can always be behind the chain.
+ * The operator journal is the primary guard; this is a safety net.
+ */
 export async function findIntentOnChain(
   q: ChainQuery,
   allowanceUnit: string,
+  currentTxHash: string,
   intentId: string,
   label: number,
   lookback = 25,
 ): Promise<string | undefined | null> {
-  const txs = await q.assetTxs(allowanceUnit, lookback);
-  if (!txs) return undefined; // provider can't tell
-  for (const h of txs) {
-    const m = (await q.txMetadata(h, label)) as { j?: string[] } | undefined;
-    if (!m?.j) continue;
-    try {
-      const rec = JSON.parse(m.j.join(""));
-      if (rec.id === intentId && rec.allowance === allowanceUnit) return h;
-    } catch {
-      /* not ours */
+  let cur: string | undefined = currentTxHash;
+  for (let i = 0; cur && i < lookback; i++) {
+    const m = (await q.txMetadata(cur, label)) as { j?: string[] } | undefined;
+    if (m?.j) {
+      try {
+        const rec = JSON.parse(m.j.join(""));
+        if (rec.id === intentId && rec.allowance === allowanceUnit) return cur;
+      } catch {
+        /* not ours */
+      }
     }
+    const inputs = await q.txInputs(cur);
+    if (!inputs) return undefined; // provider can't tell
+    cur = inputs.find((x) => x.units.includes(allowanceUnit))?.txHash; // stops at the mint
   }
   return null;
 }
@@ -178,6 +204,7 @@ export async function assertNotPaid(
   q: ChainQuery,
   journal: IntentJournal,
   allowanceUnit: string,
+  currentAllowanceTx: string,
   intentId: string,
   label: number,
   opts: { now?: () => number; pollMs?: number; graceMs?: number; lookback?: number } = {},
@@ -191,7 +218,7 @@ export async function assertNotPaid(
     }
     journal.put({ ...prev, status: "never", at: new Date().toISOString() });
   }
-  const onChain = await findIntentOnChain(q, allowanceUnit, intentId, label, opts.lookback);
+  const onChain = await findIntentOnChain(q, allowanceUnit, currentAllowanceTx, intentId, label, opts.lookback);
   if (onChain) throw new AlreadyPaid(onChain, "chain");
 }
 

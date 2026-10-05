@@ -29,6 +29,12 @@ export type SpendRequest = {
   /** UTxO holding the vault script as a reference script; inline script if absent. */
   refScript?: UTxO;
   now?: number;
+  /**
+   * POSIX ms of the chain tip, if known. Mempools judge validity against the
+   * tip's slot, which can lag the wall clock by minutes when blocks are sparse;
+   * a lower bound after the tip is rejected outright. Defaults to now - 60 s.
+   */
+  tipMs?: number;
   validityMs?: number;
   /**
    * Skip the off-chain preflight and build what the caller asked for. Only for
@@ -50,7 +56,7 @@ function validity(req: SpendRequest) {
   const { lucid, allowance, config } = req;
   const d = allowance.datum;
   const now = req.now ?? Date.now();
-  const lowerSlot = lucid.unixTimeToSlot(now - 60_000);
+  const lowerSlot = lucid.unixTimeToSlot(Math.min(now - 60_000, req.tipMs ?? Infinity));
   const lower = BigInt(lucid.slotToUnixTime(lowerSlot));
   const w = windowFor({ ...d, expiresAt: d.expiresAt + 10n ** 30n }, lower, lower); // window of `lower`
   const width = BigInt(Math.min(req.validityMs ?? 10 * 60_000, Number(config.config.maxTxValidityMs)));

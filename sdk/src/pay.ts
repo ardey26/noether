@@ -21,7 +21,8 @@ export async function payOnce(
 ): Promise<PayResult> {
   const { lucid } = req;
   try {
-    await assertNotPaid(deps.q, deps.journal, req.allowanceUnit, req.intentId, INTENT_LABEL, { pollMs: deps.pollMs });
+    const current = await readAllowance(lucid, req.vault, req.allowanceUnit);
+    await assertNotPaid(deps.q, deps.journal, req.allowanceUnit, current.utxo.txHash, req.intentId, INTENT_LABEL, { pollMs: deps.pollMs });
   } catch (e) {
     const err = e as { txHash?: string; source?: "journal" | "chain" };
     if (err.txHash) return { status: "already-paid", txHash: err.txHash, source: err.source! };
@@ -30,6 +31,7 @@ export async function payOnce(
   for (let attempt = 0; ; attempt++) {
     const built = await buildAgentSpend({
       ...req,
+      tipMs: (await deps.q.tipMs()) ?? req.tipMs,
       allowance: await readAllowance(lucid, req.vault, req.allowanceUnit),
       config: await readConfig(lucid, req.vault),
     });
