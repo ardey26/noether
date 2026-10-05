@@ -36,6 +36,9 @@ setup)
   ;;
 run)
   [[ "$VAULT_NETWORK" != Preprod ]] || : "${BLOCKFROST_PROJECT_ID:?set BLOCKFROST_PROJECT_ID (preprod)}"
+  # Intent ids are idempotency keys: the operator journal refuses to pay an id twice,
+  # so each demo run uses its own suffix.
+  RUN=$(date -u +%m%d%H%M)
   A=$(addr owner_a); B=$(addr owner_b); C=$(addr owner_c); AG=$(addr agent); M=$(addr merchant); X=$(addr contractor)
   {
     echo "# Preprod demo results"
@@ -64,29 +67,33 @@ run)
   echo "  allowance $UNIT"
 
   say "3. Agent pays the merchant three times, autonomously (agent key only)"
-  r=$(run $V agent spend "$UNIT" --to "$M" --ada 4 --purpose "invoice INV-1001" --ref INV-1001 --agent agent); record "agent pays merchant 4 tADA (intent INV-1001)" "$r"
-  r=$(run $V agent spend "$UNIT" --to "$M" --ada 8 --purpose "invoice INV-1002" --ref INV-1002 --agent agent); record "agent pays merchant 8 tADA (intent INV-1002)" "$r"
-  r=$(run $V agent spend "$UNIT" --to "$M" --ada 9 --purpose "invoice INV-1003" --ref INV-1003 --agent agent); record "agent pays merchant 9 tADA (window now ~22.1 of 25)" "$r"
+  r=$(run $V agent spend "$UNIT" --to "$M" --ada 4 --intent-id INV-1001-$RUN --purpose "invoice INV-1001" --ref INV-1001 --agent agent); record "agent pays merchant 4 tADA (intent INV-1001)" "$r"
+  r=$(run $V agent spend "$UNIT" --to "$M" --ada 8 --intent-id INV-1002-$RUN --purpose "invoice INV-1002" --ref INV-1002 --agent agent); record "agent pays merchant 8 tADA (intent INV-1002)" "$r"
+  say "3b. The agent retries INV-1001 (e.g. after a timeout): idempotent, no second payment"
+  r=$(run $V agent spend "$UNIT" --to "$M" --ada 4 --intent-id INV-1001-$RUN --purpose "invoice INV-1001 (retry)" --agent agent)
+  echo "$r" | jq -e .alreadyPaid >/dev/null || { echo "UNEXPECTED: retry of INV-1001 was not recognised as paid: $r" >&2; exit 1; }
+  echo "| agent retries INV-1001 | already paid in \`$(echo "$r" | j .alreadyPaid | cut -c1-16)…\` (found via $(echo "$r" | j .source)); no second payment |" >> "$OUT"
+  r=$(run $V agent spend "$UNIT" --to "$M" --ada 9 --intent-id INV-1003-$RUN --purpose "invoice INV-1003" --ref INV-1003 --agent agent); record "agent pays merchant 9 tADA (window now ~22.1 of 25)" "$r"
 
   say "4. Agent is blocked by the per-tx cap, the window cap, and the allowlist"
   set +e
-  r=$($V agent spend "$UNIT" --to "$M" --ada 11 --purpose "too big" --agent agent); blocked "agent tries 11 tADA (> 10 per tx)" "$r"
-  r=$($V agent spend "$UNIT" --to "$M" --ada 4 --purpose "window" --agent agent); blocked "agent tries 4 tADA (window would exceed 25)" "$r"
-  r=$($V agent spend "$UNIT" --to "$X" --ada 1 --purpose "not allowed" --agent agent); blocked "agent tries to pay contractor (not on allowlist)" "$r"
+  r=$($V agent spend "$UNIT" --to "$M" --ada 11 --intent-id X1-$RUN --purpose "too big" --agent agent); blocked "agent tries 11 tADA (> 10 per tx)" "$r"
+  r=$($V agent spend "$UNIT" --to "$M" --ada 4 --intent-id X2-$RUN --purpose "window" --agent agent); blocked "agent tries 4 tADA (window would exceed 25)" "$r"
+  r=$($V agent spend "$UNIT" --to "$X" --ada 1 --intent-id X3-$RUN --purpose "not allowed" --agent agent); blocked "agent tries to pay contractor (not on allowlist)" "$r"
   say "4b. Same over-cap spend with the SDK preflight bypassed: the validator rejects it on-chain"
-  r=$($V agent spend "$UNIT" --to "$M" --ada 11 --purpose "bypass" --agent agent --skip-preflight); blocked "bypass SDK preflight: 11 tADA, rejected by the validator script itself (node-level rejection: sdk/test/yaci)" "$r"
+  r=$($V agent spend "$UNIT" --to "$M" --ada 11 --intent-id X4-$RUN --purpose "bypass" --agent agent --skip-preflight); blocked "bypass SDK preflight: 11 tADA, rejected by the validator script itself (node-level rejection: sdk/test/yaci)" "$r"
   set -e
 
   say "5. Over-limit spend: agent builds, owners a + c co-sign the same body offline"
   T="$VAULT_HOME/overlimit.cbor"
-  $V agent overlimit "$UNIT" --to "$X" --ada 30 --purpose "contractor milestone 1" --cosigners owner_a,owner_c --out "$T" >/dev/null
+  $V agent overlimit "$UNIT" --to "$X" --ada 30 --intent-id MS1-$RUN --purpose "contractor milestone 1" --cosigners owner_a,owner_c --out "$T" >/dev/null
   $V tx describe "$T" | jq '{requiredSigners, outputs: [.outputs[] | {address, lovelace: .assets.lovelace}], intent: .intent.purpose}'
   for k in agent owner_a owner_c; do $V tx witness "$T" --key $k --out "$VAULT_HOME/$k.wit" >/dev/null; done
   r=$(run $V tx assemble "$T" "$VAULT_HOME/agent.wit" "$VAULT_HOME/owner_a.wit" "$VAULT_HOME/owner_c.wit"); record "over-limit 30 tADA, agent + owners a,c in one tx" "$r"
 
   say "6. Owners pause the vault: every agent spend halts"
   r=$(run $V config set --pause --propose owner_b --sign owner_b,owner_c); record "pause (owners b,c)" "$r"
-  set +e; r=$($V agent spend "$UNIT" --to "$M" --ada 1 --purpose "while paused" --agent agent); blocked "agent spend while paused" "$r"; set -e
+  set +e; r=$($V agent spend "$UNIT" --to "$M" --ada 1 --intent-id X5-$RUN --purpose "while paused" --agent agent); blocked "agent spend while paused" "$r"; set -e
   r=$($V config set --unpause --propose owner_b --sign owner_a,owner_b); record "unpause (owners a,b)" "$r"
 
   say "7. Owners revoke the agent's allowance and reclaim the funds"
