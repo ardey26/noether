@@ -12,7 +12,7 @@ use aiken/fuzz
 use aiken/primitive/bytearray
 use cardano/address.{Address, Script}
 use cardano/assets
-use cardano/transaction.{Input, Transaction}
+use cardano/transaction.{Transaction}
 use vault/allowance.{agent_spend, is_well_formed}
 use vault/allowance_fixtures.{
   Scenario, allowance_input, build, day, default, dest_a, hour, intent,

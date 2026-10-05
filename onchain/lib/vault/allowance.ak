@@ -10,7 +10,7 @@ use aiken_design_patterns/validity_range_normalization.{
   ClosedRange, normalize_time_range,
 }
 use cardano/address.{Script, VerificationKey}
-use cardano/assets.{AssetName, Value}
+use cardano/assets.{AssetName, Assets}
 use cardano/transaction.{InlineDatum, Input, Output, OutputReference, Transaction}
 use vault/config.{canonical_address, find_config, no_ref_scripts}
 use vault/owners.{threshold_met}
@@ -25,7 +25,7 @@ pub fn allowance_name(seed: OutputReference) -> AssetName {
 }
 
 /// The single vault token a UTxO holds, if it is an allowance token.
-fn allowance_token(value: Value, vault: ScriptHash) -> AssetName {
+fn allowance_token(value: Assets, vault: ScriptHash) -> AssetName {
   expect [Pair(name, 1)] = dict.to_pairs(assets.tokens(value, vault))
   expect name != config_token_name
   name

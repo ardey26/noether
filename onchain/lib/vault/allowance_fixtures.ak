@@ -5,7 +5,7 @@ use aiken/collection/list
 use aiken/crypto.{VerificationKeyHash}
 use aiken/interval.{Finite, Interval, IntervalBound}
 use cardano/address.{Address}
-use cardano/assets.{Value}
+use cardano/assets.{Assets}
 use cardano/transaction.{Input, Output, Transaction, placeholder}
 use vault/allowance.{allowance_name}
 use vault/config.{canonical_address}
@@ -79,17 +79,17 @@ pub fn base_datum() -> AllowanceDatum {
   }
 }
 
-pub fn usd(n: Int) -> Value {
+pub fn usd(n: Int) -> Assets {
   assets.from_asset(usd_policy, usd_name, n)
 }
 
-pub fn state_value(lovelace_ada: Int, usd_amount: Int) -> Value {
+pub fn state_value(lovelace_ada: Int, usd_amount: Int) -> Assets {
   ada(lovelace_ada)
     |> assets.merge(usd(usd_amount))
     |> assets.merge(assets.from_asset(vault, token(), 1))
 }
 
-pub fn pay(to: Address, value: Value) -> Output {
+pub fn pay(to: Address, value: Assets) -> Output {
   plain_output(to, value)
 }
 
@@ -99,7 +99,7 @@ pub type Scenario {
   /// When the input datum is well typed, the builder computes the continuing
   /// datum exactly as the validator does. `None` keeps the input datum.
   typed: Option<AllowanceDatum>,
-  in_value: Value,
+  in_value: Assets,
   payments: List<Output>,
   /// Inclusive first and last millisecond of validity.
   lower: Int,
@@ -131,14 +131,14 @@ pub fn untyped(datum: Data) -> Scenario {
   Scenario { ..default(), input_datum: datum, typed: None }
 }
 
-fn sum(outputs: List<Output>) -> Value {
+fn sum(outputs: List<Output>) -> Assets {
   list.foldl(outputs, assets.zero, fn(o, acc) { assets.merge(acc, o.value) })
 }
 
 pub fn expected_datum(
   d: AllowanceDatum,
-  in_value: Value,
-  continuing_value: Value,
+  in_value: Assets,
+  continuing_value: Assets,
   lower: Int,
 ) -> AllowanceDatum {
   // Mirrors the validator's arithmetic exactly (floor division), so an
@@ -168,7 +168,7 @@ pub fn expected_datum(
   }
 }
 
-pub fn continuing_value(s: Scenario) -> Value {
+pub fn continuing_value(s: Scenario) -> Assets {
   s.in_value
     |> assets.merge(assets.negate(sum(s.payments)))
     |> assets.merge(assets.from_lovelace(-s.fee))

@@ -2,20 +2,21 @@
 # Pinned Aiken (v1.1.23) wrapper. `scripts/aiken.sh check [-m filter]` prints a compact summary.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-VERSION=v1.1.23
+VERSION=v1.1.24
 case "$(uname -s)-$(uname -m)" in
   Darwin-arm64) TRIPLE=aarch64-apple-darwin ;;
   Darwin-x86_64) TRIPLE=x86_64-apple-darwin ;;
   Linux-aarch64) TRIPLE=aarch64-unknown-linux-musl ;;
   *) TRIPLE=x86_64-unknown-linux-musl ;;
 esac
-AIKEN="$ROOT/.tools/aiken-$TRIPLE/aiken"
+DIR="$ROOT/.tools/aiken-$VERSION-$TRIPLE"
+AIKEN="$DIR/aiken"
 if [[ ! -x "$AIKEN" ]]; then
   # Pinned compiler, verified against the release's sha256.
-  mkdir -p "$ROOT/.tools" && cd "$ROOT/.tools"
+  mkdir -p "$DIR" && cd "$DIR"
   gh release download "$VERSION" -R aiken-lang/aiken -p "aiken-$TRIPLE.tar.gz*" --clobber
   shasum -a 256 -c "aiken-$TRIPLE.tar.gz.sha256"
-  tar xzf "aiken-$TRIPLE.tar.gz"
+  tar xzf "aiken-$TRIPLE.tar.gz" --strip-components 1
 fi
 "$AIKEN" --version | grep -q "${VERSION#v}" || { echo "expected aiken $VERSION" >&2; exit 1; }
 cd "$ROOT/onchain"

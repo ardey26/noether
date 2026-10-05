@@ -8,7 +8,7 @@ use aiken/interval.{Finite, Interval, IntervalBound}
 use cardano/address.{
   Address, Inline, Script, VerificationKey, from_verification_key,
 }
-use cardano/assets.{Value}
+use cardano/assets.{Assets}
 use cardano/transaction.{
   InlineDatum, Input, NoDatum, Output, OutputReference, Transaction,
   placeholder,
@@ -55,19 +55,19 @@ pub fn out_ref(n: Int) -> OutputReference {
   }
 }
 
-pub fn config_nft() -> Value {
+pub fn config_nft() -> Assets {
   assets.from_asset(vault, config_token_name, 1)
 }
 
-pub fn ada(n: Int) -> Value {
+pub fn ada(n: Int) -> Assets {
   assets.from_lovelace(n * 1_000_000)
 }
 
-pub fn output(address: Address, value: Value, datum: Data) -> Output {
+pub fn output(address: Address, value: Assets, datum: Data) -> Output {
   Output { address, value, datum: InlineDatum(datum), reference_script: None }
 }
 
-pub fn plain_output(address: Address, value: Value) -> Output {
+pub fn plain_output(address: Address, value: Assets) -> Output {
   Output { address, value, datum: NoDatum, reference_script: None }
 }
 
@@ -131,7 +131,7 @@ pub fn tx(
   }
 }
 
-pub fn with_mint(t: Transaction, mint: Value) -> Transaction {
+pub fn with_mint(t: Transaction, mint: Assets) -> Transaction {
   Transaction { ..t, mint: mint }
 }
 

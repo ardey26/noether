@@ -1,5 +1,5 @@
 use cardano/assets
-use cardano/transaction.{DatumHash, Input, NoDatum, Output, Transaction}
+use cardano/transaction.{DatumHash, Input, NoDatum, Output}
 use vault/allowance.{allowance_name, manage_allowances}
 use vault/allowance_fixtures.{base_datum}
 use vault/config.{canonical_address}
@@ -22,14 +22,14 @@ fn allowance_out(n: ByteArray) -> Output {
   output(canonical_address(vault), assets.merge(ada(50), assets.from_asset(vault, n, 1)), base_datum())
 }
 
-fn create(outputs: List<Output>, mint: assets.Value, signers: List<ByteArray>) -> Bool {
+fn create(outputs: List<Output>, mint: assets.Assets, signers: List<ByteArray>) -> Bool {
   manage_allowances(
     vault,
     tx([funding()], [config_input(cfg_2_of_3())], outputs, signers) |> with_mint(mint),
   )
 }
 
-fn one(n: ByteArray) -> assets.Value {
+fn one(n: ByteArray) -> assets.Assets {
   assets.from_asset(vault, n, 1)
 }
 

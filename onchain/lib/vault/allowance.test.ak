@@ -1,12 +1,12 @@
 use aiken/collection/list
 use aiken/interval.{Finite, Interval, IntervalBound, NegativeInfinity, PositiveInfinity}
-use cardano/address.{Address, Inline, Pointer, Script, VerificationKey}
+use cardano/address.{Address, Pointer, Script, VerificationKey}
 use cardano/assets
 use cardano/certificate.{RegisterCredential}
 use cardano/transaction.{DatumHash, InlineDatum, Input, Output, Transaction}
 use vault/allowance.{agent_spend, co_signed_spend}
 use vault/allowance_fixtures.{
-  Scenario, allowance_input, build, closed, continuing_output, day, default,
+  Scenario, allowance_input, build, continuing_output, day, default,
   dest_a, dest_b, hour, intent, junk_policy, lovelace_cap, pay, payee_a,
   payee_b, scenario, stake_x, stake_y, state_value, t0, token, usd, usd_cap,
 }
