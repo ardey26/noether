@@ -16,3 +16,5 @@ export * from "./provider.js";
 // Re-exported so the CLI and demo share this package's single Lucid/CML instance.
 export { CML, Data, SLOT_CONFIG_NETWORK, credentialToAddress, generatePrivateKey, getAddressDetails } from "@lucid-evolution/lucid";
 export type { Assets, LucidEvolution, TxSignBuilder, UTxO } from "@lucid-evolution/lucid";
+export * from "./idempotency.js";
+export { payOnce, type PayResult } from "./pay.js";

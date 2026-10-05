@@ -22,6 +22,8 @@ export type SpendRequest = {
   /** Key-locked UTxO of the agent used as collateral. Never the allowance (ledger rule). */
   collateral: UTxO;
   payments: Payment[];
+  /** Idempotency key; required. Re-using it must never produce a second payment (see pay.ts). */
+  intentId: string;
   purpose: string;
   ref?: string;
   /** UTxO holding the vault script as a reference script; inline script if absent. */
@@ -68,8 +70,10 @@ function normalisePayments(lucid: LucidEvolution, payments: Payment[]): Payment[
 }
 
 function makeIntent(req: SpendRequest, kind: Intent["kind"], payments: Payment[]): Intent {
+  if (!req.intentId) throw new Error("intentId is required (idempotency key)");
   return {
     v: 1,
+    id: req.intentId,
     kind,
     allowance: req.allowance.unit,
     agent: req.allowance.datum.agent,

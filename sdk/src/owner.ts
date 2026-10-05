@@ -31,8 +31,21 @@ function signers(b: ReturnType<LucidEvolution["newTx"]>, keys: string[]) {
   return b;
 }
 
-async function finish(b: ReturnType<LucidEvolution["newTx"]>): Promise<TxSignBuilder> {
-  const tx = await b.complete();
+/**
+ * Every owner tx carries a TTL so its fate is always decidable (after the TTL
+ * the ledger guarantees it can never land; see idempotency.ts). It must leave
+ * enough time for offline co-signing, and stay inside the network's horizon
+ * (about 36 h on preprod, minutes on local devnets).
+ */
+let ownerTxTtlMs = 10 * 60_000;
+export function setOwnerTxTtl(ms: number) {
+  ownerTxTtlMs = ms;
+}
+
+async function finish(lucid: LucidEvolution, b: ReturnType<LucidEvolution["newTx"]>): Promise<TxSignBuilder> {
+  // The provider's clock, not the wall clock (emulators and devnets run their own).
+  const now = lucid.slotToUnixTime(lucid.currentSlot());
+  const tx = await b.validTo(now + ownerTxTtlMs).complete();
   assertTestnetOutputs(bodyOf(tx));
   return tx;
 }
@@ -59,7 +72,7 @@ export async function createVault(
   // Edge I3: park the reference script at an always-fail address so nobody can remove it.
   if (opts.refScriptAddress)
     b = b.pay.ToAddressWithData(opts.refScriptAddress, undefined, { lovelace: 0n }, vault.script);
-  return { tx: await finish(b), vault };
+  return { tx: await finish(lucid, b), vault };
 }
 
 export async function updateConfig(
@@ -72,7 +85,7 @@ export async function updateConfig(
   const problems = isValidConfig(next);
   if (problems.length) throw new Error(`invalid config: ${problems.join("; ")}`);
   const datum = configToData(next);
-  return finish(
+  return finish(lucid, 
     signers(
       lucid
         .newTx()
@@ -92,7 +105,7 @@ export const rotateOwners = (l: LucidEvolution, v: Vault, c: ConfigUtxo, owners:
   updateConfig(l, v, c, { ...c.config, owners, threshold }, s);
 
 export async function fundTreasury(lucid: LucidEvolution, vault: Vault, assets: Assets): Promise<TxSignBuilder> {
-  return finish(lucid.newTx().pay.ToAddress(vault.address, assets));
+  return finish(lucid, lucid.newTx().pay.ToAddress(vault.address, assets));
 }
 
 /** Pay out of the treasury; leftover goes back to the treasury. */
@@ -111,7 +124,7 @@ export async function treasuryPay(
   let b = lucid.newTx().collectFrom(from, OWNER).readFrom([config.utxo]).attach.SpendingValidator(vault.script);
   for (const p of payments) b = b.pay.ToAddress(p.to, p.assets);
   if (Object.keys(leftover).length) b = b.pay.ToAddress(vault.address, leftover);
-  return finish(signers(b, ownerSigners));
+  return finish(lucid, signers(b, ownerSigners));
 }
 
 // --- allowances -------------------------------------------------------------
@@ -171,7 +184,7 @@ export async function grantAllowance(
     b = b.collectFrom(opts.fromTreasury, OWNER);
     if (Object.keys(leftover).length) b = b.pay.ToAddress(vault.address, leftover);
   }
-  return { tx: await finish(signers(b, ownerSigners)), unit };
+  return { tx: await finish(lucid, signers(b, ownerSigners)), unit };
 }
 
 /** Replace an allowance's datum (and optionally add funds). Token stays. */
@@ -187,7 +200,7 @@ export async function editAllowance(
   const problems = wellFormedProblems(next);
   if (problems.length) throw new Error(`invalid allowance: ${problems.join("; ")}`);
   const d = allowanceToData(next);
-  return finish(
+  return finish(lucid, 
     signers(
       lucid
         .newTx()
@@ -212,7 +225,7 @@ export async function revokeAllowance(
   ownerSigners: string[],
 ): Promise<TxSignBuilder> {
   const rest = sub(allowance.utxo.assets, { [allowance.unit]: 1n });
-  return finish(
+  return finish(lucid, 
     signers(
       lucid
         .newTx()

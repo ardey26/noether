@@ -8,6 +8,8 @@ export const INTENT_LABEL = 7041;
 
 export type Intent = {
   v: 1;
+  /** Caller-chosen idempotency key (e.g. invoice id). One payment per id per operator. */
+  id: string;
   kind: "agent_spend" | "co_signed_spend";
   allowance: string; // allowance token unit
   agent: string; // agent key hash
