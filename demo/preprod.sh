@@ -13,6 +13,9 @@ SCAN="https://preprod.cardanoscan.io/transaction"
 j() { jq -r "$1"; }
 addr() { $V keys show "$1" | j .address; }
 say() { printf '\n\033[1m%s\033[0m\n' "$*"; }
+run() { # run <cmd...>: must succeed; on failure print why and stop (never fail silently)
+  local r; if ! r=$("$@"); then echo "FAILED: $*" >&2; echo "$r" >&2; exit 1; fi; echo "$r"
+}
 record() { # record <step> <json-with-submitted>
   local h; h=$(echo "$2" | jq -r '.submitted // empty' | tail -1)
   if [[ -n "$h" ]]; then echo "| $1 | [\`${h:0:16}…\`]($SCAN/$h) |" >> "$OUT"; echo "  tx $h"; fi
@@ -47,23 +50,23 @@ run)
   # Plain transfers from owner_a's wallet; the agent's wallet only ever holds collateral.
   for pair in "$B:20" "$AG:10"; do
     to=${pair%%:*}; amt=${pair##*:}
-    r=$("$ROOT/sdk/node_modules/.bin/tsx" "$ROOT/demo/transfer.mts" owner_a "$to" "$amt"); record "fund ${to:0:20}… with $amt tADA" "$r"
+    r=$(run "$ROOT/sdk/node_modules/.bin/tsx" "$ROOT/demo/transfer.mts" owner_a "$to" "$amt"); record "fund ${to:0:20}… with $amt tADA" "$r"
   done
 
   say "1. Create the vault: owners a, b, c; threshold 2 (reference script parked at an always-fail address)"
-  r=$($V vault create --owners owner_a,owner_b,owner_c --threshold 2 --max-validity 10m --payer owner_a); record "create vault (config NFT + ref script)" "$r"
+  r=$(run $V vault create --owners owner_a,owner_b,owner_c --threshold 2 --max-validity 10m --payer owner_a); record "create vault (config NFT + ref script)" "$r"
   echo "  vault $(echo "$r" | j .vault.address)"
-  r=$($V treasury fund --ada 150 --payer owner_a); record "fund treasury 150 tADA" "$r"
+  r=$(run $V treasury fund --ada 150 --payer owner_a); record "fund treasury 150 tADA" "$r"
 
   say "2. Owners a+b grant the agent an allowance: 25 tADA/day window, 10 tADA per tx, pays only merchant"
-  r=$($V allowance grant --agent agent --dest "$M" --cap lovelace:25:10 --period 1d --expires 30d --max-fee 1 --fund 60 --from-treasury --propose owner_a --sign owner_a,owner_b)
+  r=$(run $V allowance grant --agent agent --dest "$M" --cap lovelace:25:10 --period 1d --expires 30d --max-fee 1 --fund 60 --from-treasury --propose owner_a --sign owner_a,owner_b)
   UNIT=$(echo "$r" | jq -rs '.[0].allowance'); record "grant allowance" "$(echo "$r" | jq -s '.[1]')"
   echo "  allowance $UNIT"
 
   say "3. Agent pays the merchant three times, autonomously (agent key only)"
-  r=$($V agent spend "$UNIT" --to "$M" --ada 4 --purpose "invoice INV-1001" --ref INV-1001 --agent agent); record "agent pays merchant 4 tADA (intent INV-1001)" "$r"
-  r=$($V agent spend "$UNIT" --to "$M" --ada 8 --purpose "invoice INV-1002" --ref INV-1002 --agent agent); record "agent pays merchant 8 tADA (intent INV-1002)" "$r"
-  r=$($V agent spend "$UNIT" --to "$M" --ada 9 --purpose "invoice INV-1003" --ref INV-1003 --agent agent); record "agent pays merchant 9 tADA (window now ~22.1 of 25)" "$r"
+  r=$(run $V agent spend "$UNIT" --to "$M" --ada 4 --purpose "invoice INV-1001" --ref INV-1001 --agent agent); record "agent pays merchant 4 tADA (intent INV-1001)" "$r"
+  r=$(run $V agent spend "$UNIT" --to "$M" --ada 8 --purpose "invoice INV-1002" --ref INV-1002 --agent agent); record "agent pays merchant 8 tADA (intent INV-1002)" "$r"
+  r=$(run $V agent spend "$UNIT" --to "$M" --ada 9 --purpose "invoice INV-1003" --ref INV-1003 --agent agent); record "agent pays merchant 9 tADA (window now ~22.1 of 25)" "$r"
 
   say "4. Agent is blocked by the per-tx cap, the window cap, and the allowlist"
   set +e
@@ -79,10 +82,10 @@ run)
   $V agent overlimit "$UNIT" --to "$X" --ada 30 --purpose "contractor milestone 1" --cosigners owner_a,owner_c --out "$T" >/dev/null
   $V tx describe "$T" | jq '{requiredSigners, outputs: [.outputs[] | {address, lovelace: .assets.lovelace}], intent: .intent.purpose}'
   for k in agent owner_a owner_c; do $V tx witness "$T" --key $k --out "$VAULT_HOME/$k.wit" >/dev/null; done
-  r=$($V tx assemble "$T" "$VAULT_HOME/agent.wit" "$VAULT_HOME/owner_a.wit" "$VAULT_HOME/owner_c.wit"); record "over-limit 30 tADA, agent + owners a,c in one tx" "$r"
+  r=$(run $V tx assemble "$T" "$VAULT_HOME/agent.wit" "$VAULT_HOME/owner_a.wit" "$VAULT_HOME/owner_c.wit"); record "over-limit 30 tADA, agent + owners a,c in one tx" "$r"
 
   say "6. Owners pause the vault: every agent spend halts"
-  r=$($V config set --pause --propose owner_b --sign owner_b,owner_c); record "pause (owners b,c)" "$r"
+  r=$(run $V config set --pause --propose owner_b --sign owner_b,owner_c); record "pause (owners b,c)" "$r"
   set +e; r=$($V agent spend "$UNIT" --to "$M" --ada 1 --purpose "while paused" --agent agent); blocked "agent spend while paused" "$r"; set -e
   r=$($V config set --unpause --propose owner_b --sign owner_a,owner_b); record "unpause (owners a,b)" "$r"
 
