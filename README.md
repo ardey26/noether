@@ -175,7 +175,7 @@ The adversary is a compromised agent key that builds arbitrary transactions.
 | Reference-script UTxO spent or removed | **OC ⛓** It is parked at an always-fail address (`ref_holder`), so nobody can spend it. The SDK falls back to an inline script if it is ever missing. |
 | The allowance used as collateral and lost on a phase-2 failure | **LG ⛓** Collateral must be key-locked, so the node rejects a script-locked collateral input. The agent posts collateral from its own small key UTxO. |
 | Network id mixups (preprod vs mainnet) | **LG ⛓ / OFF** The ledger rejects wrong-network outputs (`WrongNetwork`, replayed). The SDK refuses `Mainnet`, checks every output is network 0, requires a `preprod…` Blockfrost id, and checks the provider's network magic. |
-| UTxO lookup inconsistencies across providers | **OFF** One provider per session. Vault state is re-validated on every read (token, address, datum). The SDK waits until a tx is *indexed*, not just confirmed. The test harness applies the same discipline to the devnet faucet, which showed exactly this bug. |
+| UTxO lookup inconsistencies across providers | **OFF** This was **observed on preprod**: Blockfrost served spent UTxOs after confirmation. Mitigations:<br>- One provider per session.<br>- Every vault-state read is re-validated (token, address, datum) and cross-checked against the tx-level view, which filters consumed outputs.<br>- `awaitSettled` waits until each output address shows the tx's outputs and none of its spent inputs.<br>- When the node answers "inputs already spent", the CLI re-reads and rebuilds. This is safe, because a stale eUTxO tx can never double-spend. It fired live during the preprod demo. |
 
 ### Off-chain
 | Edge | Resolution |
@@ -198,7 +198,7 @@ The adversary is a compromised agent key that builds arbitrary transactions.
 ## Known limitations
 - **Unaudited.** This is new design: I found no audited Cardano allowance or session-key contract to copy. The ported Sundae code no longer carries the audit, and `aiken-design-patterns` has no published audit.
 - **stdlib v3.1.0.** The v4 migration (stdlib v4, fuzz v3, ADP v1.9.0) is scheduled as milestone M6, before any audit.
-- **Ledger-real tests ran on PV10.** They ran on Yaci DevKit v0.11.0-beta1 (cardano-node 10.5.0, PV10). Yaci v0.12.0-beta5 (PV11) stalls after its block-producer hand-off; before stalling it passed 33 of 34. Preprod (PV11) evidence comes from the demo run.
+- **The adversarial replay ran on PV10, not PV11.** It ran on Yaci DevKit v0.11.0-beta1 (cardano-node 10.5.0, PV10). Yaci v0.12.0-beta5 (PV11) stalls after its block-producer hand-off; before stalling it passed 33 of 34. PV11 evidence comes from the preprod demo (`demo/RESULTS.md`), where honest spends, refusals, the co-signed spend, pause and revoke all ran on the real PV11 ledger. The attack suite itself was not replayed on preprod.
 - **Lucid Evolution limitations:**
   - It has no "use this UTxO as collateral" API. The SDK forces it through the coin-selection pool and then **asserts** the body's collateral is exactly that UTxO, failing closed if not.
   - Lucid's emulator does not run Plutus scripts on submit. Emulator tests cover honest flows, which Lucid's local UPLC still evaluates against the real validator. Adversarial claims are only made from the real-node suite.
@@ -242,3 +242,4 @@ Test counts at the time of writing:
 | SDK unit + emulator tests | 28 |
 | Real-node adversarial replays | 34 |
 | CLI smoke checks | 17 |
+| Preprod demo txs (all links in `demo/RESULTS.md`) | 12, plus 5 refusals |
