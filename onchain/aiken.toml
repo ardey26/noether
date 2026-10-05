@@ -1,0 +1,28 @@
+name = "noether/vault"
+version = "0.0.0"
+compiler = "v1.1.23"
+plutus = "v3"
+license = "Apache-2.0"
+description = "Agent Allowance Vault: m-of-n treasury with scoped, autonomous agent allowances"
+
+[repository]
+user = "noether"
+project = "vault"
+platform = "github"
+
+[[dependencies]]
+name = "aiken-lang/stdlib"
+version = "v3.1.0"
+source = "github"
+
+[[dependencies]]
+name = "aiken-lang/fuzz"
+version = "v2.2.0"
+source = "github"
+
+[[dependencies]]
+name = "anastasia-labs/aiken-design-patterns"
+version = "v1.8.0"
+source = "github"
+
+[config]
