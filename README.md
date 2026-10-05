@@ -1,4 +1,4 @@
-# Agent Allowance Vault (Cardano, preprod MVP)
+# Noether
 
 An m-of-n owner treasury that grants AI agents and bots **scoped allowances**. Agents spend autonomously with only their own key, within limits the chain enforces. Spends over the limits need the agent and the owner threshold to sign one exact tx. Owners can kill one allowance or pause all of them in a single tx.
 
