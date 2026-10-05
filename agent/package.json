@@ -1,0 +1,1 @@
+{ "name": "@noether/agent", "private": true, "type": "module", "description": "LLM accounts-payable agent driving the vault through the signer daemon" }

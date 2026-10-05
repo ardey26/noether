@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# LLM agent entry point (OpenAI-compatible endpoint; default: local Ollama).
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+exec "$ROOT/sdk/node_modules/.bin/tsx" "$ROOT/agent/src/main.ts" "$@"

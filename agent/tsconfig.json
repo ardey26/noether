@@ -1,0 +1,5 @@
+{
+  "extends": "../sdk/tsconfig.json",
+  "compilerOptions": { "typeRoots": ["../sdk/node_modules/@types"], "types": ["node"] },
+  "include": ["src"]
+}
