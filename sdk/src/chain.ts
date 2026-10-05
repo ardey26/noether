@@ -9,8 +9,23 @@ import type { OutRef, Vault } from "./vault.js";
 export type ConfigUtxo = { utxo: UTxO; config: ConfigDatum };
 export type AllowanceUtxo = { utxo: UTxO; unit: string; datum: AllowanceDatum };
 
+/**
+ * Edge I6: Blockfrost's per-address/per-asset index can briefly return a UTxO
+ * that is already spent. The tx-level endpoint (`utxosByOutRef`) filters
+ * consumed outputs, so every vault-state read is cross-checked against it and
+ * re-queried until the two views agree.
+ */
+async function liveUtxosWithUnit(lucid: LucidEvolution, address: string, unit: string, attempts = 20): Promise<UTxO[]> {
+  for (let i = 0; ; i++) {
+    const found = await lucid.utxosAtWithUnit(address, unit);
+    const live = found.length ? await lucid.utxosByOutRef(found.map((u) => ({ txHash: u.txHash, outputIndex: u.outputIndex }))) : [];
+    if (live.length === found.length || i >= attempts) return live;
+    await new Promise((r) => setTimeout(r, 3000));
+  }
+}
+
 export async function readConfig(lucid: LucidEvolution, vault: Vault): Promise<ConfigUtxo> {
-  const found = await lucid.utxosAtWithUnit(vault.address, vault.configUnit);
+  const found = await liveUtxosWithUnit(lucid, vault.address, vault.configUnit);
   if (found.length !== 1) throw new Error(`expected 1 config UTxO at the vault, found ${found.length}`);
   const utxo = found[0]!;
   if (utxo.address !== vault.address) throw new Error("config UTxO is not at the canonical address");
@@ -24,7 +39,7 @@ function allowanceUnits(u: UTxO, vault: Vault): string[] {
 }
 
 export async function readAllowance(lucid: LucidEvolution, vault: Vault, unit: string): Promise<AllowanceUtxo> {
-  const found = await lucid.utxosAtWithUnit(vault.address, unit);
+  const found = await liveUtxosWithUnit(lucid, vault.address, unit);
   if (found.length !== 1) throw new Error(`expected 1 UTxO holding ${unit}, found ${found.length}`);
   const utxo = found[0]!;
   if (allowanceUnits(utxo, vault).length !== 1 || utxo.assets[unit] !== 1n)
