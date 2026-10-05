@@ -1,0 +1,28 @@
+name = "noether/spike"
+version = "0.0.0"
+compiler = "v1.1.23"
+plutus = "v3"
+license = "Apache-2.0"
+description = "M0 spike: single-input script spend, explicit collateral, multi-party witnesses"
+
+[repository]
+user = "noether"
+project = "spike"
+platform = "github"
+
+[[dependencies]]
+name = "aiken-lang/stdlib"
+version = "v3.1.0"
+source = "github"
+
+[[dependencies]]
+name = "aiken-lang/fuzz"
+version = "v2.2.0"
+source = "github"
+
+[[dependencies]]
+name = "anastasia-labs/aiken-design-patterns"
+version = "v1.8.0"
+source = "github"
+
+[config]
