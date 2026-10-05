@@ -1,0 +1,73 @@
+# file	pattern (python regex)	replacement	-- every line must be KILLED by the test suite
+lib/vault/owners.ak	cfg.threshold >= 1,	True,
+lib/vault/owners.ak	cfg.threshold <= n,	True,
+lib/vault/owners.ak	n <= max_owners,	True,
+lib/vault/owners.ak	bytearray.length\(k\) == 28	True
+lib/vault/owners.ak	list.unique\(cfg.owners\) == cfg.owners,	True,
+lib/vault/owners.ak	cfg.max_tx_validity_ms > 0,	True,
+lib/vault/multisig.ak	required <= list.count	required - 1 <= list.count
+lib/vault/config.ak	expect input.output.address == canonical_address\(vault\)	expect True
+lib/vault/config.ak	quantity_of\(output.value, vault, config_token_name\) == 1	quantity_of(output.value, vault, config_token_name) >= 0
+lib/vault/owner.ak	output.address == canonical_address\(vault\),	True,
+lib/vault/owner.ak	output.reference_script == None,	True,
+lib/vault/owner.ak	is_valid_config\(cfg\)\n	True\n
+lib/vault/owner.ak	expect list.any\(tx.inputs, fn\(i\) \{ i.output_reference == seed \}\)	expect True
+lib/vault/owner.ak	expect threshold_met\(current, tx.extra_signatories\)	expect True
+lib/vault/owner.ak	Pair\(config_token_name, 1\),	Pair(config_token_name, 2),
+lib/vault/allowance.ak	expect \[_\] = tx.inputs	expect True
+lib/vault/allowance.ak	expect assets.is_zero\(tx.mint\)	expect True
+lib/vault/allowance.ak	expect tx.withdrawals == \[\]	expect True
+lib/vault/allowance.ak	expect tx.certificates == \[\]	expect True
+lib/vault/allowance.ak	expect tx.treasury_donation == None	expect True
+lib/vault/allowance.ak	expect is_well_formed\(d\)\n  expect agent	expect True\n  expect agent
+lib/vault/allowance.ak	bytearray.length\(d.agent\) == 28,	True,
+lib/vault/allowance.ak	n_dest >= 1,	True,
+lib/vault/allowance.ak	n_dest <= max_destinations,	True,
+lib/vault/allowance.ak	VerificationKey\(_\) -> True\n          _ -> False	VerificationKey(_) -> True\n          _ -> True
+lib/vault/allowance.ak	n_caps >= 1,	True,
+lib/vault/allowance.ak	n_caps <= max_assets,	True,
+lib/vault/allowance.ak	c.window_cap >= 0 && c.tx_cap >= 0	True
+lib/vault/allowance.ak	list.length\(d.spent\) == n_caps,	True,
+lib/vault/allowance.ak	list.all\(d.spent, fn\(s\) \{ s >= 0 \}\),	True,
+lib/vault/allowance.ak	d.period_ms > 0,	True,
+lib/vault/allowance.ak	d.expires_at > d.window_start,	True,
+lib/vault/allowance.ak	d.max_fee >= 0,	True,
+lib/vault/allowance.ak	bytearray.length\(intent_hash\) == 32,	True,
+lib/vault/allowance.ak	!cfg.paused,	True,
+lib/vault/allowance.ak	!list.has\(cfg.owners, d.agent\),	True,
+lib/vault/allowance.ak	list.has\(tx.extra_signatories, d.agent\),\n  \}	True,\n  }
+lib/vault/allowance.ak	expect name != config_token_name\n  name	name
+lib/vault/allowance.ak	expect upper - lower \+ 1 <= cfg.max_tx_validity_ms	expect True
+lib/vault/allowance.ak	expect upper < d.expires_at	expect upper <= d.expires_at
+lib/vault/allowance.ak	expect lower >= d.window_start	expect True
+lib/vault/allowance.ak	expect upper < window_start \+ d.period_ms	expect upper <= window_start + d.period_ms
+lib/vault/allowance.ak	if k == 0 \{\n      d.spent	if True {\n      d.spent
+lib/vault/allowance.ak	expect \[continuing\] = vault_outputs	expect [continuing, ..] = vault_outputs
+lib/vault/allowance.ak	expect continuing.address == canonical_address\(vault\)	expect True
+lib/vault/allowance.ak	expect assets.quantity_of\(continuing.value, vault, token\) == 1	expect True
+lib/vault/allowance.ak	expect no_ref_scripts\(tx.outputs\)	expect True
+lib/vault/allowance.ak	q > 0 && list.any	True && list.any
+lib/vault/allowance.ak	q > 0 && list.any\(d.caps, fn\(c\) \{ c.policy == p && c.name == n \}\)	q > 0
+lib/vault/allowance.ak	expect tx.fee <= d.max_fee	expect True
+lib/vault/allowance.ak	expect q <= c.tx_cap	expect True
+lib/vault/allowance.ak	expect s \+ q <= c.window_cap	expect s + q <= c.window_cap + 1
+lib/vault/allowance.ak	AllowanceDatum \{ \.\.d, spent: new_spent, window_start: window_start \}	AllowanceDatum { ..d, spent: new_spent }
+lib/vault/allowance.ak	list.all\(payments, fn\(o\) \{ list.has\(d.destinations, o.address\) \}\)	True
+lib/vault/allowance.ak	    is_well_formed\(d\),\n    agent_preconditions	    True,\n    agent_preconditions
+lib/vault/allowance.ak	threshold_met\(cfg, tx.extra_signatories\),\n  \}	True,\n  }
+lib/vault/allowance.ak	expect threshold_met\(find_config\(tx, vault\), tx.extra_signatories\)	expect True
+lib/vault/allowance.ak	expect minted != \[\]	expect True
+lib/vault/allowance.ak	        name != config_token_name,\n        or	        True,\n        or
+lib/vault/allowance.ak	qty == -1,	qty < 0,
+lib/vault/allowance.ak	qty == 1,	qty >= 1,
+lib/vault/allowance.ak	allowance_name\(i.output_reference\) == name	True
+lib/vault/allowance.ak	list.any\(tx.outputs, fn\(o\) \{ is_allowance_output\(o, vault, name\) \}\)	True
+lib/vault/allowance.ak	o.address == canonical_address\(vault\),	True,
+lib/vault/allowance.ak	dict.to_pairs\(assets.tokens\(o.value, vault\)\) == \[Pair\(name, 1\)\],	assets.quantity_of(o.value, vault, name) == 1,
+lib/vault/allowance.ak	o.reference_script == None,\n    when	True,\n    when
+lib/vault/allowance.ak	InlineDatum\(_\) -> True\n      _ -> False	InlineDatum(_) -> True\n      _ -> True
+validators/vault.ak	OwnerManage -> owner.owner_manage\(own_input, vault_hash, tx\)	OwnerManage -> True
+validators/vault.ak	allowance.agent_spend\(own_input, vault_hash, intent_hash, tx\)	True
+validators/vault.ak	allowance.co_signed_spend\(own_input, vault_hash, intent_hash, tx\)	True
+validators/vault.ak	ManageAllowances -> allowance.manage_allowances\(policy, tx\)	ManageAllowances -> True
+validators/vault.ak	InitConfig -> owner.init_config\(seed, policy, tx\)	InitConfig -> True
