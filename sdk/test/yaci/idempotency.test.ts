@@ -87,6 +87,7 @@ describe("idempotent agent payments", () => {
     // ...process dies here...
     const rerun = await payOnce(req("INV-C", amt), { q, journal, sign, pollMs: 2000 });
     expect(rerun).toMatchObject({ status: "already-paid", source: "journal" });
+    await awaitSettled(w.lucid, signed); // the provider's address view can lag the chain
     expect(await paymentsOf(amt)).toBe(1);
   });
 
