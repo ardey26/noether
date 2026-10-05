@@ -11,6 +11,14 @@ import {
   CML,
   agent,
   awaitSettled,
+  AlreadyPaid,
+  FileJournal,
+  INTENT_LABEL,
+  NeverLands,
+  assertNotPaid,
+  blockfrostQuery,
+  payOnce,
+  submitResolving,
   connect,
   cosign,
   credentialToAddress,
@@ -33,6 +41,8 @@ import {
 } from "./sdk.js";
 
 const HOME = resolve(process.env.VAULT_HOME ?? ".vault");
+// Owner-tx TTL: long enough for offline co-signing, inside the network horizon.
+owner.setOwnerTxTtl(Number(process.env.VAULT_TX_TTL_MS ?? (process.env.VAULT_NETWORK === "Custom" ? 90_000 : 10 * 60_000)));
 const KEYS = join(HOME, "keys");
 const STATE = join(HOME, "state.json");
 const ADA = 1_000_000n;
@@ -68,6 +78,29 @@ function loadState(): State {
   if (!existsSync(STATE)) die(`no vault yet (vault vault create ...); state file ${STATE}`);
   return JSON.parse(readFileSync(STATE, "utf8"));
 }
+/** Chain queries for fate checks, and the operator-wide intent journal. */
+function chainQuery() {
+  const cfg = providerFromEnv();
+  return blockfrostQuery(cfg.blockfrostUrl, cfg.blockfrostProjectId);
+}
+const journal = () => new FileJournal(join(HOME, "intents.jsonl"));
+
+/**
+ * Submit with a fate check: if the node says the inputs are already spent,
+ * decide whether THIS tx landed (success) or can never land (NeverLands ->
+ * main() rebuilds). Never blindly rebuild: that is how double payments happen.
+ */
+async function submitSafely(lucid: LucidEvolution, signedCbor: string, intent?: { id: string; allowance: string }) {
+  const j = intent ? journal() : undefined;
+  const hash = await submitResolving(lucid, chainQuery(), signedCbor, { journal: j, intentId: intent?.id, allowance: intent?.allowance });
+  await awaitSettled(lucid, signedCbor);
+  if (j && intent) {
+    const e = j.get(intent.id);
+    if (e) j.put({ ...e, status: "landed", at: new Date().toISOString() });
+  }
+  return hash;
+}
+
 function vaultOf(lucid: LucidEvolution): Vault {
   const s = loadState();
   if (s.network !== lucid.config().network) die(`state is for ${s.network}, connected to ${lucid.config().network} (edge I5)`);
@@ -122,8 +155,7 @@ async function finishTx(lucid: LucidEvolution, tx: TxSignBuilder, v: { sign?: st
   if (!list(v.sign).length) die("pass --sign k1,k2 to sign locally, or --out file.cbor for offline signing");
   const ws = await Promise.all(signers.map((n) => cosign.witness(lucid, cbor, loadKey(n).privateKey)));
   const signed = await cosign.assemble(lucid, cbor, ws);
-  await signed.submit();
-  const hash = await awaitSettled(lucid, signed.toCBOR());
+  const hash = await submitSafely(lucid, signed.toCBOR());
   out({ submitted: hash });
   return hash;
 }
@@ -162,8 +194,7 @@ const commands: Record<string, (argv: string[]) => Promise<void>> = {
       { refScriptAddress: refHolderAddress(lucid.config().network!) },
     );
     const signedTx = await tx.sign.withWallet().complete();
-    await signedTx.submit();
-    const hash = await awaitSettled(lucid, signedTx.toCBOR());
+    const hash = await submitSafely(lucid, signedTx.toCBOR());
     const ref = (await lucid.utxosByOutRef([{ txHash: hash, outputIndex: 0 }, { txHash: hash, outputIndex: 1 }])).find(
       (u) => u.scriptRef?.script === vault.script.script,
     );
@@ -196,8 +227,7 @@ const commands: Record<string, (argv: string[]) => Promise<void>> = {
     lucid.selectWallet.fromPrivateKey(loadKey(v.payer ?? die("--payer required")).privateKey);
     const tx = await owner.fundTreasury(lucid, vaultOf(lucid), { lovelace: ada(v.ada) ?? die("--ada required") });
     const signedTx = await tx.sign.withWallet().complete();
-    await signedTx.submit();
-    const hash = await awaitSettled(lucid, signedTx.toCBOR());
+    const hash = await submitSafely(lucid, signedTx.toCBOR());
     out({ submitted: hash });
   },
 
@@ -370,6 +400,7 @@ const commands: Record<string, (argv: string[]) => Promise<void>> = {
         to: { type: "string" },
         ada: { type: "string" },
         asset: { type: "string" },
+        "intent-id": { type: "string" },
         purpose: { type: "string", default: "" },
         ref: { type: "string" },
         "signer-socket": { type: "string" },
@@ -377,44 +408,49 @@ const commands: Record<string, (argv: string[]) => Promise<void>> = {
         out: { type: "string" },
       },
     });
+    const intentId = v["intent-id"] ?? die("--intent-id <id> is required: it makes the payment idempotent (one payment per id)");
     const lucid = await connect(providerFromEnv());
     const vault = vaultOf(lucid);
-    const unit = positionals[0] ?? die("usage: vault agent spend <allowance-unit> --to addr --ada N");
+    const unit = positionals[0] ?? die("usage: vault agent spend <allowance-unit> --to addr --ada N --intent-id ID");
     const al = await readAllowance(lucid, vault, unit);
     const agentAddr = addressOf(lucid, al.datum.agent);
-    const walletUtxos = await lucid.utxosAt(agentAddr);
-    const collateral = walletUtxos.find((u) => Object.keys(u.assets).length === 1 && !u.scriptRef) ?? die(`agent ${agentAddr} needs a pure-ADA UTxO for collateral`);
+    const collateral =
+      (await lucid.utxosAt(agentAddr)).find((u) => Object.keys(u.assets).length === 1 && !u.scriptRef) ??
+      die(`agent ${agentAddr} needs a pure-ADA UTxO for collateral`);
     lucid.selectWallet.fromAddress(agentAddr, [collateral!]);
+    const base = {
+      lucid,
+      vault,
+      collateral: collateral!,
+      refScript: await refScriptOf(lucid),
+      payments: [{ to: v.to ?? die("--to required"), assets: assetsOf(v) }],
+      intentId,
+      purpose: v.purpose!,
+      ref: v.ref,
+    };
+    // The agent's key is held by the signer daemon, or (dev only) a local key file.
+    const sign = (cbor: string) =>
+      v["signer-socket"]
+        ? requestWitness(v["signer-socket"], cbor)
+        : cosign.witness(lucid, cbor, loadKey(v.agent ?? die("--signer-socket or --agent <key> required")).privateKey);
     try {
-      const built = await agent.buildAgentSpend({
-        lucid,
-        vault,
-        allowance: al,
-        config: await readConfig(lucid, vault),
-        collateral: collateral!,
-        refScript: await refScriptOf(lucid),
-        payments: [{ to: v.to ?? die("--to required"), assets: assetsOf(v) }],
-        purpose: v.purpose!,
-        ref: v.ref,
-        skipPreflight: v["skip-preflight"],
-      });
-      const cbor = built.tx.toCBOR();
-      if (v.out) {
-        writeFileSync(v.out, cbor);
-        out({ unsigned: v.out, fee: built.fee, next: built.next });
+      if (v.out || v["skip-preflight"]) {
+        // Export-only, or a deliberate preflight bypass (demos/tests): one build, no retries.
+        const built = await agent.buildAgentSpend({ ...base, allowance: al, config: await readConfig(lucid, vault), skipPreflight: v["skip-preflight"] });
+        if (v.out) {
+          writeFileSync(v.out, built.tx.toCBOR());
+          out({ unsigned: v.out, fee: built.fee, next: built.next });
+          return;
+        }
+        const signed = await cosign.assemble(lucid, built.tx.toCBOR(), [await sign(built.tx.toCBOR())]);
+        out({ submitted: await submitSafely(lucid, signed.toCBOR(), { id: intentId, allowance: unit }) });
         return;
       }
-      // The agent's key is held by the signer daemon, or (dev only) a local key file.
-      const wit = v["signer-socket"]
-        ? await requestWitness(v["signer-socket"], cbor)
-        : await cosign.witness(lucid, cbor, loadKey(v.agent ?? die("--signer-socket or --agent <key> required")).privateKey);
-      const signed = await cosign.assemble(lucid, cbor, [wit]);
-      await signed.submit();
-      const hash = await awaitSettled(lucid, signed.toCBOR());
-      out({ submitted: hash, fee: built.fee, spent: built.next.spent, intent: built.intent });
+      const r = await payOnce({ ...base, allowanceUnit: unit }, { q: chainQuery(), journal: journal(), sign });
+      if (r.status === "already-paid") out({ alreadyPaid: r.txHash, source: r.source, intentId });
+      else out({ submitted: r.txHash, fee: r.built.fee, spent: r.built.next.spent, intent: r.built.intent });
     } catch (e) {
       const err = e as Error & { code?: string };
-      if (isStaleInput(err)) throw err; // provider lag, not a refusal: let main() rebuild and retry
       out({ blocked: err.code ?? "SCRIPT_OR_LEDGER", reason: err.message.split("\n")[0]?.slice(0, 400) });
       process.exitCode = 3;
     }
@@ -429,13 +465,22 @@ const commands: Record<string, (argv: string[]) => Promise<void>> = {
         ada: { type: "string" },
         asset: { type: "string" },
         purpose: { type: "string", default: "" },
+        "intent-id": { type: "string" },
         cosigners: { type: "string" },
         out: { type: "string" },
       },
     });
+    const intentId = v["intent-id"] ?? die("--intent-id <id> is required (idempotency key)");
     const lucid = await connect(providerFromEnv());
     const vault = vaultOf(lucid);
-    const al = await readAllowance(lucid, vault, positionals[0] ?? die("usage: vault agent overlimit <unit> ..."));
+    const unitArg = positionals[0] ?? die("usage: vault agent overlimit <unit> ...");
+    try {
+      await assertNotPaid(chainQuery(), journal(), unitArg!, intentId, INTENT_LABEL);
+    } catch (e) {
+      if (e instanceof AlreadyPaid) return out({ alreadyPaid: e.txHash, source: e.source, intentId });
+      throw e;
+    }
+    const al = await readAllowance(lucid, vault, unitArg!);
     const agentAddr = addressOf(lucid, al.datum.agent);
     const collateral = (await lucid.utxosAt(agentAddr)).find((u) => Object.keys(u.assets).length === 1 && !u.scriptRef) ?? die("agent needs collateral");
     lucid.selectWallet.fromAddress(agentAddr, [collateral!]);
@@ -447,6 +492,7 @@ const commands: Record<string, (argv: string[]) => Promise<void>> = {
       collateral: collateral!,
       refScript: await refScriptOf(lucid),
       payments: [{ to: v.to ?? die("--to required"), assets: assetsOf(v) }],
+      intentId,
       purpose: v.purpose!,
       cosigners: list(v.cosigners).map(pkhOf),
     });
@@ -478,9 +524,14 @@ const commands: Record<string, (argv: string[]) => Promise<void>> = {
     const first = cosign.describeTx(cbor).requiredSigners[0] ?? die("tx has no required signers");
     lucid.selectWallet.fromAddress(addressOf(lucid, first!), []);
     const signed = await cosign.assemble(lucid, cbor, wits.map((f) => readFileSync(f, "utf8").trim()));
-    await signed.submit();
-    const hash = await awaitSettled(lucid, signed.toCBOR());
-    out({ submitted: hash });
+    const intent = cosign.describeTx(cbor).intent;
+    // A fixed body can't be rebuilt here: on NeverLands the parties must build and sign a new one.
+    try {
+      out({ submitted: await submitSafely(lucid, signed.toCBOR(), intent ? { id: intent.id, allowance: intent.allowance } : undefined) });
+    } catch (e) {
+      if (e instanceof NeverLands) die(`${e.message}. This body can't be rebuilt here: the agent must build a new tx and owners re-sign it.`);
+      throw e;
+    }
   },
 
   async "signer start"(argv) {
@@ -532,22 +583,12 @@ const HELP = `vault <command>
   allowance grant --agent k --dest addr1,addr2 --cap lovelace:WINDOW_ADA:TX_ADA [--period 1d] [--expires 30d]
                   [--max-fee 2] --fund N [--from-treasury] --propose a --sign a,b
   allowance list | edit <unit> ... | revoke <unit> --propose a --sign a,b
-  agent spend <unit> --to addr --ada N --purpose "..." (--signer-socket path | --agent k) [--skip-preflight]
-  agent overlimit <unit> --to addr --ada N --purpose "..." --cosigners a,c --out tx.cbor
+  agent spend <unit> --to addr --ada N --intent-id ID --purpose "..." (--signer-socket path | --agent k) [--skip-preflight]
+  agent overlimit <unit> --to addr --ada N --intent-id ID --purpose "..." --cosigners a,c --out tx.cbor
   tx describe <tx.cbor> | tx witness <tx.cbor> --key k --out k.wit | tx assemble <tx.cbor> <wits...>
   signer start --key agent --allowance <unit> --dest addr1,addr2 [--socket path] [limits...]
 env: VAULT_NETWORK=Preprod|Custom, BLOCKFROST_PROJECT_ID, VAULT_HOME`;
 
-/**
- * Edge I6: providers can serve a UTxO view that lags the chain (Blockfrost
- * answers from load-balanced backends at slightly different heights), so a
- * build may pick an input that a just-confirmed tx already spent. The node
- * rejects such a tx outright, so nothing was submitted; re-reading state and
- * rebuilding is safe (eUTxO: a stale tx can never double-spend).
- */
-function isStaleInput(e: unknown) {
-  return /All inputs are spent|BadInputsUTxO/.test(String((e as Error)?.message ?? e));
-}
 
 async function main() {
   const [a, b, ...rest] = process.argv.slice(2);
@@ -560,9 +601,11 @@ async function main() {
     try {
       return await cmd!(rest);
     } catch (e) {
-      if (!isStaleInput(e) || attempt >= 6) throw e;
-      console.error(`provider view is stale (attempt ${attempt}); re-reading chain state and rebuilding in 15 s`);
-      await new Promise((r) => setTimeout(r, 15_000));
+      // Edge I6: rebuild ONLY when the attempted tx provably can never land
+      // (its inputs were spent by another tx, or its TTL passed). See idempotency.ts.
+      if (!(e instanceof NeverLands) || attempt >= 6) throw e;
+      console.error(`attempt ${attempt} can never land (stale provider view); re-reading chain state and rebuilding`);
+      await new Promise((r) => setTimeout(r, 10_000));
     }
   }
 }
