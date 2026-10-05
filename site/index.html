@@ -3,156 +3,261 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="theme-color" content="#ECF0EB" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#10181C" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#161826">
 <title>noether</title>
-<meta name="description" content="Let your agent trade on Cardano inside limits you set, enforced on-chain.">
+<meta name="description" content="Multisig for AI agents. Owners approve, agents spend inside an allowance, enforced on-chain on Cardano.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M15 3 A13 13 0 0 0 15 29 Z' fill='%239184d9'/%3E%3Cpath d='M17 4.6 A11.4 11.4 0 0 1 17 27.4' fill='none' stroke='%23e9e9ed' stroke-width='3.5'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css">
 <style>
   :root {
-    --bg: #ECF0EB;
-    --ink: #17232A;
-    --muted: #5E6C69;
-    --line: #CDD6CC;
-    --term: #17232A;
-    --term-text: #DCE6E2;
-    --term-dim: #7F938E;
-    --amber: #E0A126;
-    --refuse: #C24452;
-    --focus: #1F6B66;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root:not([data-theme="light"]) {
-      --bg: #10181C; --ink: #E6EDEA; --muted: #8C9C98; --line: #26343A; --term: #0B1215; --focus: #6FC2B9;
-    }
+    --bg: #161826;
+    --surface: #232532;
+    --text: #e9e9ed;
+    --accent: #9184d9;
+    --n300: #cfd3e5; --n400: #b2b6ca; --n500: #9397ab; --n600: #75798c; --n700: #595d6c; --n800: #3f424d; --n900: #292b31;
+    --a200: #e7e5fe; --a300: #d2cefd; --a400: #b5abfc; --a700: #5d5294; --a800: #423a6a; --a900: #2b2741;
+    --no: #e0838c; --no-text: #f0b4b9; --no-bg: #4a2a33; --no-line: #6b3a44;
+    --edge: 0 0 0 1px #3f424d;
+    --r-sm: 4px; --r-md: 8px; --r-lg: 14px;
+    --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
   }
   * { box-sizing: border-box; }
   html { -webkit-text-size-adjust: 100%; }
-  body { margin: 0; background: var(--bg); color: var(--ink); font: 400 1.0625rem/1.55 "Geist", system-ui, sans-serif; }
-  a { color: inherit; }
-  a:focus-visible, button:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; border-radius: 6px; }
-  .wrap { width: min(960px, 100% - 2rem); margin-inline: auto; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 400 15px/1.55 "Inter", system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+  a { color: var(--accent); text-underline-offset: 3px; }
+  a:hover { color: var(--a400); }
+  ::selection { background: rgba(145,132,217,.3); }
+  :focus { outline: none; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: var(--r-sm); }
+  h1, h2 { font-weight: 500; margin: 0; }
 
-  header { display: flex; justify-content: space-between; align-items: center; padding: 1.6rem 0; }
-  .mark { font-weight: 700; font-size: 1.2rem; letter-spacing: -0.03em; text-decoration: none; }
-  header a.gh { font-size: 0.95rem; color: var(--muted); text-decoration: none; }
-  header a.gh:hover { color: var(--ink); }
+  .page { max-width: 1344px; margin: 0 auto; padding: 0 72px; }
 
-  .hero { padding: clamp(3rem, 10vw, 7rem) 0 3rem; }
-  h1 { font-size: clamp(2.6rem, 8.5vw, 5.6rem); line-height: 0.98; letter-spacing: -0.045em; font-weight: 700; margin: 0; max-width: 14ch; }
-  .lede { font-size: clamp(1.1rem, 2.4vw, 1.3rem); color: var(--muted); margin: 1.6rem 0 2.2rem; max-width: 40ch; }
+  header { display: flex; justify-content: space-between; align-items: center; padding: 24px 0; }
+  .brand { display: flex; align-items: center; gap: 8px; font-size: 19px; font-weight: 600; letter-spacing: -.03em; color: var(--text); text-decoration: none; }
+  .gh { display: flex; align-items: center; gap: 6px; font-size: 14px; color: var(--text); text-decoration: none; }
+  .gh i { font-size: 18px; }
 
-  .install { display: inline-flex; align-items: center; gap: 0.9rem; max-width: 100%; background: var(--term); color: var(--term-text); border-radius: 999px; padding: 0.55rem 0.55rem 0.55rem 1.3rem; font: 500 0.95rem "Geist Mono", ui-monospace, monospace; }
-  .install code { overflow-x: auto; white-space: nowrap; }
-  .install code::before { content: "$ "; color: var(--term-dim); }
+  .hero { padding: 88px 0 56px; display: flex; flex-direction: column; gap: 20px; }
+  h1 { font-size: 84px; line-height: 1; letter-spacing: -.04em; }
+  .lede { font-size: 22px; color: var(--n400); margin: 0; }
+  .install { display: flex; align-self: flex-start; align-items: center; gap: 14px; max-width: 100%; background: var(--surface); box-shadow: var(--edge); border-radius: var(--r-md); padding: 8px 8px 8px 16px; font: 500 15px var(--mono); margin-top: 12px; }
+  .install code { font: inherit; overflow-x: auto; white-space: nowrap; }
+  .install code::before { content: "$ "; color: var(--n600); }
+  .copy { flex: none; font: 500 13px "Inter", sans-serif; color: var(--a300); background: transparent; border: 1px solid var(--accent); border-radius: 6px; padding: 6px 12px; cursor: pointer; }
+  .copy:hover { background: var(--a900); }
 
-  .copy { flex: none; font: 500 0.82rem "Geist", sans-serif; color: var(--term); background: var(--term-text); border: 0; border-radius: 999px; padding: 0.45rem 0.9rem; cursor: pointer; }
-  .copy:hover { background: #fff; }
-  .copy[data-done] { background: var(--amber); }
+  /* flow diagram: owners -> vault -> agent -> payees */
+  .flow { background: linear-gradient(180deg, #1c1e2e, var(--bg)); box-shadow: var(--edge); border-radius: var(--r-lg); padding: 48px 40px 40px; }
+  .flow-row { display: grid; grid-template-columns: auto 1fr 260px 1fr auto 1fr auto; align-items: center; gap: 16px; }
+  .wire { position: relative; height: 1px; background: var(--a700); }
+  .node { display: flex; flex-direction: column; align-items: center; gap: 12px; font-size: 15px; color: var(--n300); }
+  .owners { display: flex; }
+  .owner { width: 52px; height: 52px; border-radius: 50%; background: var(--n900); box-shadow: inset 0 0 0 1.5px var(--n700); display: grid; place-items: center; color: var(--a200); font-size: 22px; }
+  .owner + .owner { margin-left: -10px; }
+  .owner.on { background: var(--a800); box-shadow: inset 0 0 0 1.5px var(--accent); }
+  .vault { background: var(--surface); box-shadow: inset 0 0 0 1px var(--a700); border-radius: var(--r-md); padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+  .vault-head { display: flex; justify-content: space-between; align-items: center; font-size: 13px; color: var(--n500); }
+  .vault-head span:first-child { display: flex; align-items: center; gap: 6px; }
+  .allow { background: var(--a900); box-shadow: inset 0 0 0 1px var(--accent); border-radius: 6px; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+  .allow-head { display: flex; justify-content: space-between; font-size: 13px; color: var(--a300); }
+  .meter { position: relative; height: 8px; border-radius: 999px; background: var(--n900); }
+  .meter-fill { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: var(--accent); border-radius: 999px; transition: width .6s cubic-bezier(.2,.7,.2,1); }
+  .agent { width: 64px; height: 64px; border-radius: var(--r-md); background: var(--surface); box-shadow: inset 0 0 0 1px var(--n700); display: grid; place-items: center; font-size: 32px; color: var(--text); }
+  .chip { position: absolute; left: 50%; top: -14px; transform: translateX(-50%); white-space: nowrap; font: 500 12px var(--mono); color: var(--n500); background: transparent; border-radius: var(--r-sm); padding: 4px 8px; transition: color .3s, background .3s; }
+  .chip.ok { color: var(--a300); background: var(--a900); }
+  .chip.no { color: var(--no-text); background: var(--no-bg); }
+  .payees { display: flex; flex-direction: column; gap: 10px; }
+  .payee { width: 40px; height: 40px; border-radius: 50%; background: var(--a900); box-shadow: inset 0 0 0 1px var(--a700); display: grid; place-items: center; color: var(--a300); font-size: 18px; }
+  .payee.no { background: transparent; box-shadow: inset 0 0 0 1px var(--no-line); color: var(--no); }
 
-  .meter { margin: 0; padding: 3.5rem 0 1rem; }
-  .track { position: relative; height: 18px; border-radius: 999px; background: var(--line); }
-  .cap { position: absolute; left: 80%; top: -10px; bottom: -10px; width: 2px; background: var(--ink); border-radius: 2px; }
-  .seg { position: absolute; top: 0; bottom: 0; background: var(--amber); transform-origin: left; transform: scaleX(0); animation: grow 0.5s cubic-bezier(.2,.7,.2,1) forwards; }
-  .s1 { left: 0; width: 25.6%; border-radius: 999px 0 0 999px; animation-delay: 0.3s; }
-  .s2, .s3, .s4 { box-shadow: inset 3px 0 0 var(--bg); }
-  .s2 { left: 25.6%; width: 25.6%; animation-delay: 0.8s; }
-  .s3 { left: 51.2%; width: 25.6%; animation-delay: 1.3s; }
-  .s4 { left: 76.8%; width: 19.2%; background: var(--refuse); border-radius: 0 999px 999px 0; animation: grow 0.5s cubic-bezier(.2,.7,.2,1) 2s forwards, bounce 0.4s ease-in 2.6s forwards; }
-  .scale { display: flex; justify-content: space-between; gap: 1rem; margin-top: 1rem; font-size: 0.95rem; color: var(--muted); }
-  .scale b { color: var(--refuse); font-weight: 600; text-align: right; opacity: 0; animation: show 0.3s 2.7s forwards; }
-  @keyframes grow { to { transform: scaleX(1); } }
-  @keyframes bounce { to { transform: scaleX(1); opacity: 0.55; } }
-  @keyframes show { to { opacity: 1; } }
-  @media (prefers-reduced-motion: reduce) {
-    .seg { animation: none; transform: none; }
-    .s4 { opacity: 0.55; }
-    .scale b { animation: none; opacity: 1; }
+  section { padding: 120px 0 0; }
+  h2 { font-size: 44px; line-height: 1.05; letter-spacing: -.03em; }
+
+  .how { display: grid; grid-template-columns: 280px 1fr; gap: 56px; align-items: start; }
+  .steps { display: grid; grid-template-columns: repeat(4, 1fr); }
+  .step { display: flex; flex-direction: column; gap: 14px; padding-right: 20px; }
+  .step:last-child { padding-right: 0; }
+  .step-top { display: flex; align-items: center; gap: 10px; }
+  .step-top::after { content: ""; flex: 1; height: 1px; background: var(--a700); }
+  .step:last-child .step-top::after { display: none; }
+  .badge { width: 44px; height: 44px; flex: none; border-radius: 50%; background: var(--a900); box-shadow: inset 0 0 0 1px var(--accent); display: grid; place-items: center; color: var(--a300); font-size: 20px; }
+  .step b { font-size: 17px; font-weight: 500; }
+  .step span { font-size: 15px; color: var(--n500); }
+
+  .enforced { display: flex; flex-direction: column; gap: 40px; }
+  .enforced h2 { text-align: center; }
+  .tiles { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; }
+  .tile { background: var(--surface); border-radius: var(--r-md); padding: 24px 20px; height: 200px; display: flex; flex-direction: column; justify-content: space-between; gap: 24px; }
+  .tile b { font-size: 17px; font-weight: 500; }
+  .pic { height: 56px; display: flex; align-items: center; position: relative; color: var(--a400); }
+  .pic > i { font-size: 52px; }
+  .cap { position: relative; width: 100%; height: 12px; border-radius: 999px; background: var(--n900); }
+  .cap .in { position: absolute; left: 0; top: 0; bottom: 0; width: 62%; background: var(--accent); border-radius: 999px; }
+  .cap .over { position: absolute; left: 62%; top: 0; bottom: 0; width: 30%; background: var(--no); opacity: .4; border-radius: 0 999px 999px 0; }
+  .cap .line { position: absolute; left: 62%; top: -10px; bottom: -10px; width: 2px; background: var(--text); }
+  .bars { align-items: flex-end; gap: 6px; }
+  .bars::before { content: ""; position: absolute; left: 0; right: 0; top: 12px; height: 2px; background: var(--text); }
+  .bars span { flex: 1; background: var(--accent); border-radius: 3px; }
+  .bars span:last-child { background: var(--a700); }
+  .dots { gap: 8px; }
+  .dot { width: 40px; height: 40px; border-radius: 50%; background: var(--a800); display: grid; place-items: center; color: var(--a200); font-size: 18px; }
+  .dot.no { background: transparent; box-shadow: inset 0 0 0 1px var(--no-line); color: var(--no); }
+
+  .rules { display: grid; grid-template-columns: 1.4fr 1fr; gap: 56px; align-items: center; }
+  .rules h2 { order: 2; text-align: right; }
+  .log { background: #10111b; box-shadow: var(--edge); border-radius: var(--r-md); padding: 24px; display: flex; flex-direction: column; gap: 14px; font: 400 15px var(--mono); }
+  .log div { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+  .log div > span:first-child { color: var(--n300); }
+  .log div > span:last-child { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+  .log i { font-size: 18px; }
+  .paid { color: var(--a300); }
+  .refused { color: var(--no); }
+  .dup { color: var(--n400); }
+
+  footer { padding: 120px 0 32px; display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; font-size: 14px; color: var(--n500); }
+  footer a { color: var(--n500); }
+
+  @media (max-width: 1100px) {
+    .page { padding: 0 40px; }
+    h1 { font-size: 64px; }
+    .how { grid-template-columns: 1fr; gap: 40px; }
+    .tiles { grid-template-columns: repeat(3, 1fr); }
+    .rules { grid-template-columns: 1fr; gap: 32px; }
+    .rules h2 { order: 0; text-align: left; }
   }
-
-  section { padding: clamp(4rem, 10vw, 7rem) 0 0; }
-  h2 { font-size: clamp(1.8rem, 4.5vw, 2.6rem); letter-spacing: -0.035em; line-height: 1.05; font-weight: 700; margin: 0 0 0.8rem; }
-  section > p { color: var(--muted); margin: 0 0 1.8rem; max-width: 52ch; }
-
-  .term { position: relative; background: var(--term); border-radius: 18px; padding: 1.6rem; }
-  .term pre { margin: 0; overflow-x: auto; font: 400 0.9rem/1.75 "Geist Mono", ui-monospace, monospace; color: var(--term-text); padding-right: 4.5rem; }
-  .term .c { color: var(--term-dim); }
-  .term .copy { position: absolute; top: 1.1rem; right: 1.1rem; }
-
-  footer { padding: 6rem 0 2.5rem; font-size: 0.9rem; color: var(--muted); display: flex; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
-
-  @media (max-width: 600px) {
-    .install { display: flex; font-size: 0.8rem; padding-left: 1rem; gap: 0.6rem; }
-    .term { padding: 1.2rem; border-radius: 14px; }
-    .term pre { padding-right: 0; padding-top: 2.4rem; font-size: 0.82rem; }
-    .term .copy { top: 0.9rem; right: 0.9rem; }
+  @media (max-width: 760px) {
+    .page { padding: 0 16px; }
+    .hero { padding: 48px 0 40px; }
+    h1 { font-size: 44px; }
+    .lede { font-size: 18px; }
+    .install { align-self: stretch; font-size: 13px; gap: 10px; padding-left: 12px; }
+    .flow { padding: 32px 20px; }
+    .flow-row { grid-template-columns: 1fr; justify-items: center; gap: 0; }
+    .flow-row .wire { width: 1px; height: 40px; }
+    .flow-row .wire:has(.chip) { height: 56px; }
+    .chip { top: 50%; left: 14px; transform: translateY(-50%); }
+    .vault { width: min(260px, 100%); }
+    .payees { flex-direction: row; }
+    section { padding-top: 80px; }
+    h2 { font-size: 34px; }
+    .steps { grid-template-columns: 1fr 1fr; row-gap: 32px; }
+    .step:nth-child(2) .step-top::after { display: none; }
+    .tiles { grid-template-columns: 1fr 1fr; }
+    .tile { height: 168px; padding: 20px 16px; }
+    .tile:last-child { grid-column: span 2; }
+    .log { font-size: 13px; padding: 18px; }
+    footer { padding-top: 80px; }
+  }
+  @media (max-width: 400px) {
+    .steps { grid-template-columns: 1fr; }
+    .step .step-top::after { display: none; }
   }
 </style>
 </head>
 <body>
-<div class="wrap">
+<div class="page">
   <header>
-    <a class="mark" href="#">noether</a>
-    <a class="gh" href="https://github.com/ardey26/noether">GitHub</a>
+    <a class="brand" href="#"><svg width="24" height="24" viewBox="0 0 32 32" aria-hidden="true"><path d="M15 3 A13 13 0 0 0 15 29 Z" fill="#9184d9"/><path d="M17 4.6 A11.4 11.4 0 0 1 17 27.4" fill="none" stroke="#e9e9ed" stroke-width="3.5"/></svg>noether</a>
+    <a class="gh" href="https://github.com/ardey26/noether"><i class="ph ph-github-logo" aria-hidden="true"></i>GitHub</a>
   </header>
 
   <main>
     <div class="hero">
-      <h1>Let your agent trade for you, inside limits you set.</h1>
-      <p class="lede">A Cardano vault that gives your agent a budget, not your keys. The chain enforces every limit. Payments work today. Minswap swaps are next.</p>
+      <h1>Multisig for AI agents.</h1>
+      <p class="lede">Owners approve. Agents spend inside an allowance.</p>
       <div class="install"><code>npx skills add ardey26/noether</code><button class="copy" type="button">Copy</button></div>
     </div>
 
-    <figure class="meter" aria-label="An agent with a 25 tADA daily budget makes three payments. A fourth would exceed the budget and is refused.">
-      <div class="track" aria-hidden="true">
-        <div class="seg s1"></div><div class="seg s2"></div><div class="seg s3"></div><div class="seg s4"></div>
-        <div class="cap"></div>
+    <figure class="flow" style="margin:0" aria-label="Two of three owners fund a 150 ADA multisig and grant an agent a 25 ADA allowance. The agent pays two approved payees. A 12 ADA payment over the cap is refused.">
+      <div class="flow-row" aria-hidden="true">
+        <div class="node">
+          <div class="owners"><span class="owner on"><i class="ph ph-check"></i></span><span class="owner on"><i class="ph ph-check"></i></span><span class="owner"></span></div>
+          2 of 3 owners
+        </div>
+        <div class="wire"></div>
+        <div class="vault">
+          <div class="vault-head"><span><i class="ph ph-vault" style="font-size:16px"></i>Multisig</span><span>150 ADA</span></div>
+          <div class="allow">
+            <div class="allow-head"><span>Allowance</span><span><span id="spent">0 ADA</span> / 25</span></div>
+            <div class="meter"><div class="meter-fill" id="fill"></div></div>
+          </div>
+        </div>
+        <div class="wire"></div>
+        <div class="node"><span class="agent"><i class="ph ph-robot"></i></span>Agent</div>
+        <div class="wire"><span class="chip" id="chip">waiting…</span></div>
+        <div class="payees">
+          <span class="payee"><i class="ph ph-storefront"></i></span>
+          <span class="payee"><i class="ph ph-cloud"></i></span>
+          <span class="payee no"><i class="ph ph-x"></i></span>
+        </div>
       </div>
-      <figcaption class="scale"><span>25 tADA a day</span><b>Over budget, refused on-chain</b></figcaption>
     </figure>
 
-    <section aria-labelledby="setup-h">
-      <h2 id="setup-h">Run it on preprod</h2>
-      <p>You need Node 22, a Blockfrost preprod key and test ADA from the faucet.</p>
-      <div class="term">
-        <pre><code><span class="c"># install</span>
-git clone https://github.com/ardey26/noether &amp;&amp; cd noether
-(cd sdk &amp;&amp; npm ci) &amp;&amp; scripts/aiken.sh build
-export VAULT_NETWORK=Preprod BLOCKFROST_PROJECT_ID=preprod...
+    <section class="how" aria-labelledby="how-h">
+      <h2 id="how-h">How it works</h2>
+      <ol class="steps" style="list-style:none;margin:0;padding:0">
+        <li class="step"><div class="step-top"><span class="badge"><i class="ph ph-users-three"></i></span></div><b>Owners create a multisig</b><span>Any 2 of 3 sign</span></li>
+        <li class="step"><div class="step-top"><span class="badge"><i class="ph ph-hand-coins"></i></span></div><b>They grant an allowance</b><span>Caps, payees, expiry</span></li>
+        <li class="step"><div class="step-top"><span class="badge"><i class="ph ph-robot"></i></span></div><b>The agent pays alone</b><span>With its own key</span></li>
+        <li class="step"><div class="step-top"><span class="badge"><i class="ph ph-seal-check"></i></span></div><b>Over the limit?</b><span>Owners co-sign</span></li>
+      </ol>
+    </section>
 
-<span class="c"># three owners, any two can act</span>
-for k in owner_a owner_b owner_c agent; do cli/vault keys gen $k; done
-cli/vault vault create --owners owner_a,owner_b,owner_c --threshold 2 --payer owner_a
-cli/vault treasury fund --ada 150 --payer owner_a
+    <section class="enforced" aria-labelledby="enf-h">
+      <h2 id="enf-h">Enforced on-chain.</h2>
+      <div class="tiles">
+        <div class="tile"><div class="pic" aria-hidden="true"><div class="cap"><div class="in"></div><div class="over"></div><div class="line"></div></div></div><b>Per-payment cap</b></div>
+        <div class="tile"><div class="pic bars" aria-hidden="true"><span style="height:40%"></span><span style="height:70%"></span><span style="height:55%"></span><span style="height:78%"></span><span style="height:30%"></span><span style="height:78%"></span><span style="height:20%"></span></div><b>Daily budget</b></div>
+        <div class="tile"><div class="pic dots" aria-hidden="true"><span class="dot"><i class="ph ph-check"></i></span><span class="dot"><i class="ph ph-check"></i></span><span class="dot no"><i class="ph ph-x"></i></span></div><b>Approved payees</b></div>
+        <div class="tile"><div class="pic" aria-hidden="true"><i class="ph ph-calendar-x"></i></div><b>Expiry</b></div>
+        <div class="tile"><div class="pic" aria-hidden="true"><i class="ph ph-pause-circle"></i></div><b>Pause all, one tx</b></div>
+      </div>
+    </section>
 
-<span class="c"># 25 tADA a day, 10 per payment, one payee</span>
-cli/vault allowance grant --agent agent --dest &lt;payee&gt; --cap lovelace:25:10 \
-  --fund 60 --from-treasury --propose owner_a --sign owner_a,owner_b</code></pre>
-        <button class="copy" type="button">Copy</button>
+    <section class="rules" aria-labelledby="rules-h">
+      <h2 id="rules-h">Your agent knows the rules.</h2>
+      <div class="log">
+        <div><span>pay 4 ADA · INV-1001</span><span class="paid"><i class="ph ph-check-circle" aria-hidden="true"></i>paid</span></div>
+        <div><span>pay 12 ADA · INV-1004</span><span class="refused"><i class="ph ph-x-circle" aria-hidden="true"></i>TX_CAP</span></div>
+        <div><span>pay 4 ADA · INV-1001</span><span class="dup"><i class="ph ph-arrow-counter-clockwise" aria-hidden="true"></i>already paid</span></div>
       </div>
     </section>
   </main>
 
   <footer>
-    <span>Preprod only. Not audited yet.</span>
+    <span>Cardano preprod. Not audited yet.</span>
     <a href="https://github.com/ardey26/noether">github.com/ardey26/noether</a>
   </footer>
 </div>
 <script>
-  for (const btn of document.querySelectorAll(".copy")) {
-    btn.addEventListener("click", async () => {
-      const text = btn.parentElement.querySelector("code").innerText;
-      try {
-        await navigator.clipboard.writeText(text);
-        btn.textContent = "Copied";
-        btn.dataset.done = "";
-        setTimeout(() => { btn.textContent = "Copy"; delete btn.dataset.done; }, 1600);
-      } catch {
-        btn.textContent = "Select to copy";
-      }
-    });
+  const btn = document.querySelector(".copy");
+  btn.addEventListener("click", async () => {
+    try { await navigator.clipboard.writeText("npx skills add ardey26/noether"); } catch {}
+    btn.textContent = "Copied";
+    clearTimeout(btn.t);
+    btn.t = setTimeout(() => { btn.textContent = "Copy"; }, 1600);
+  });
+
+  // Agent pays 4, 8, 9 ADA; the 12 ADA payment is over the 10 ADA per-payment cap and refused.
+  const spentBy = [0, 4, 12, 21, 21];
+  const chips = [["waiting…", ""], ["−4 ADA", "ok"], ["−8 ADA", "ok"], ["−9 ADA", "ok"], ["−12 ADA · refused", "no"]];
+  const fill = document.getElementById("fill"), spent = document.getElementById("spent"), chip = document.getElementById("chip");
+  function render(shown) {
+    fill.style.width = (spentBy[shown] / 25 * 100) + "%";
+    spent.textContent = spentBy[shown] + " ADA";
+    chip.textContent = chips[shown][0];
+    chip.className = "chip " + chips[shown][1];
+  }
+  if (matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    render(4);
+  } else {
+    let step = 0;
+    render(0);
+    setInterval(() => { step = (step + 1) % 7; render(Math.min(step, 4)); }, 1100);
   }
 </script>
 </body>
