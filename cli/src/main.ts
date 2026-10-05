@@ -559,6 +559,9 @@ const commands: Record<string, (argv: string[]) => Promise<void>> = {
       socketPath: v.socket ?? join(HOME, "signer.sock"),
       privateKey: k.privateKey,
       auditLog: v.audit ?? join(HOME, "signer-audit.jsonl"),
+      // Rate/budget counters and the intent-id dedupe table survive restarts.
+      statePath: join(HOME, "signer-state.json"),
+      chain: chainQuery(),
       policy: {
         agentKeyHash: k.pkh,
         vaultAddress: vault.address,
