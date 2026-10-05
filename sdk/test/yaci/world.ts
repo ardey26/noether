@@ -225,11 +225,11 @@ export async function yaciWorld(opts: { maxTxValidityMs?: bigint } = {}) {
   const payee2 = newKey(stakeKey);
   const stranger = newKey();
   // Preprod amounts are smaller: rejected attacks are free, only setup txs cost tADA.
-  const big = TARGET === "preprod" ? 600 : 3000;
+  const big = TARGET === "preprod" ? 230 : 3000;
   await fund(lucid, [
     [a.address, big],
-    [b.address, TARGET === "preprod" ? 20 : 200],
-    [c.address, TARGET === "preprod" ? 20 : 200],
+    [b.address, TARGET === "preprod" ? 10 : 200],
+    [c.address, TARGET === "preprod" ? 10 : 200],
     [agent.address, 10],
     [agent.address, 30],
     [stranger.address, TARGET === "preprod" ? 20 : 50],
@@ -250,7 +250,7 @@ export async function yaciWorld(opts: { maxTxValidityMs?: bigint } = {}) {
   ));
   await signSubmit(lucid, async () => (await buildCreate()).tx, [a]);
   const vault = created.vault;
-  await signSubmit(lucid, () => owner.fundTreasury(lucid, vault, { lovelace: (TARGET === "preprod" ? 450n : 1000n) * ADA }), [a]);
+  await signSubmit(lucid, () => owner.fundTreasury(lucid, vault, { lovelace: (TARGET === "preprod" ? 150n : 1000n) * ADA }), [a]);
   const refScript = (await lucid.utxosAt(refHolder)).find((u) => u.scriptRef?.script === vault.script.script);
   if (!refScript) throw new Error("reference script UTxO not found");
 
@@ -280,7 +280,7 @@ export async function grant(
       windowStart: now - 600_000n,
       expiresAt: now + 30n * 24n * 3_600_000n,
       maxFee: 5n * ADA,
-      fund: { lovelace: 100n * ADA },
+      fund: { lovelace: (TARGET === "preprod" ? 60n : 100n) * ADA },
       ...overrides,
     },
     [w.a.pkh, w.b.pkh],

@@ -214,7 +214,7 @@ describe("time", () => {
   it("T2 a range straddling a window boundary (short-period allowance)", async () => {
     const now = BigInt(Date.now());
     // 60 s windows starting 45 s ago: [now-45s, now+15s) is window 0.
-    const short = await grant(w, { periodMs: 60_000n, windowStart: now - 45_000n });
+    const short = await grant(w, { periodMs: 60_000n, windowStart: now - 45_000n, fund: { lovelace: 30n * ADA } });
     const c = await ctx(short);
     // Validity is computed only now, right before submitting, anchored at the tip.
     const from = w.lucid.slotToUnixTime(w.lucid.unixTimeToSlot(Math.min(Date.now() - 5_000, await tipMs())));
@@ -282,7 +282,7 @@ describe("config, roles, signatures", () => {
     await expectScriptFailure(
       await attack(() => ctx(), {
         redeemer: spendRedeemer({ kind: "CoSignedSpend", intentHash: "1e".repeat(32) }),
-        payments: [{ to: w.stranger.address, assets: { lovelace: 60n * ADA } }],
+        payments: [{ to: w.stranger.address, assets: { lovelace: 30n * ADA } }], // over the 20 ADA tx cap
         requiredSigners: [w.agent.pkh, w.a.pkh],
         signWith: [w.agent, w.a],
       }),
@@ -381,7 +381,7 @@ describe("pause, races, malformed datums", () => {
   });
 
   it("R2 revoke and spend racing for the same UTxO: exactly one lands", async () => {
-    const racer = await grant(w);
+    const racer = await grant(w, { fund: { lovelace: 30n * ADA } });
     const c = await ctx(racer);
     const spend = await buildAttack(c);
     w.lucid.selectWallet.fromPrivateKey(w.a.privateKey);
