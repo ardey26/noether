@@ -1,0 +1,25 @@
+{
+  "name": "@noether/vault-sdk",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Agent Allowance Vault SDK: owner side, agent side, co-signing, signer daemon",
+  "scripts": {
+    "test": "vitest run test/unit test/emulator",
+    "test:yaci": "vitest run test/yaci --no-file-parallelism",
+    "typecheck": "tsc --noEmit"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "@lucid-evolution/lucid": "0.6.5",
+    "@noble/hashes": "1.8.0"
+  },
+  "devDependencies": {
+    "@types/node": "26.6.4",
+    "tsx": "4.23.15",
+    "typescript": "5.9",
+    "vitest": "4.1.11"
+  }
+}
