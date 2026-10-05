@@ -1,0 +1,9 @@
+.tools/
+.keys/
+node_modules/
+build/
+dist/
+*.sk
+.env
+.vault/
+.vault-*/
