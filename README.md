@@ -175,7 +175,7 @@ The adversary is a compromised agent key that builds arbitrary transactions.
 | Reference-script UTxO spent or removed | **OC ⛓** It is parked at an always-fail address (`ref_holder`), so nobody can spend it. The SDK falls back to an inline script if it is ever missing. |
 | The allowance used as collateral and lost on a phase-2 failure | **LG ⛓** Collateral must be key-locked, so the node rejects a script-locked collateral input. The agent posts collateral from its own small key UTxO. |
 | Network id mixups (preprod vs mainnet) | **LG ⛓ / OFF** The ledger rejects wrong-network outputs (`WrongNetwork`, replayed). The SDK refuses `Mainnet`, checks every output is network 0, requires a `preprod…` Blockfrost id, and checks the provider's network magic. |
-| UTxO lookup inconsistencies across providers | **OFF** This was **observed on preprod**: Blockfrost served spent UTxOs after confirmation. Mitigations:<br>- One provider per session.<br>- Every vault-state read is re-validated (token, address, datum) and cross-checked against the tx-level view, which filters consumed outputs.<br>- `awaitSettled` waits until each output address shows the tx's outputs and none of its spent inputs.<br>- When the node answers "inputs already spent", the CLI re-reads and rebuilds. This is safe, because a stale eUTxO tx can never double-spend. It fired live during the preprod demo. |
+| UTxO lookup inconsistencies across providers | **OFF** This was **observed on preprod**: Blockfrost served spent UTxOs after confirmation. Mitigations:<br>- One provider per session.<br>- Every vault-state read is cross-checked against the tx-level view, which filters consumed outputs.<br>- `awaitSettled` waits until the provider's address views settle.<br>- On "inputs already spent", **the attempted tx's fate is resolved first**: rebuild only if it can never land, and treat "already landed" as success.<br>- Agent spends are idempotent by intent id: journal plus chain scan. See [Integrator guidance](#integrator-guidance-paying-exactly-once). Tests: `sdk/test/yaci/idempotency.test.ts` covers 4 double-pay scenarios on a real node. |
 
 ### Off-chain
 | Edge | Resolution |
@@ -183,6 +183,43 @@ The adversary is a compromised agent key that builds arbitrary transactions.
 | Hot key inside the LLM process | **OFF** `signer/` is a separate process on a Unix socket (mode 0600) and is the only holder of the agent key. It re-decodes every tx, applies its own allowlist, short-TTL, rate-limit and daily-budget policy, returns only a witness, and appends an audit log. KMS/HSM integration is out of scope. |
 | Prompt injection driving repeated max spends | **OC + OFF** The on-chain caps bound the damage. The signer adds per-hour and per-day limits the chain can't express. Tested: a repeated-spend loop is refused. |
 | Pre-signed txs held back and submitted later | **OC ⛓ / LG ⛓** Validity width is ≤ `max_tx_validity_ms`, so a held-back tx dies with `OutsideValidityInterval` (replayed). Any intervening spend also invalidates it, because its input is gone. The signer refuses long TTLs. |
+
+## Integrator guidance: paying exactly once
+
+**The trap.** A node rejecting your tx with "All inputs are spent" / `BadInputsUTxO` does **not** mean your payment failed. It can mean *your own earlier submission already landed* while your provider's view was stale. Rebuilding and resubmitting then **pays twice**, because the rebuild reads the newer state and constructs a fresh, valid payment. This happened in practice on preprod with Blockfrost: confirmed txs' inputs were still served as unspent for a while afterwards.
+
+**What the SDK does** (`sdk/src/idempotency.ts`, `sdk/src/pay.ts`):
+1. **Every tx has a TTL.** After it, the ledger guarantees the tx can never land, so "did it land?" always has a final answer. Agent txs are bounded by `max_tx_validity_ms`; owner txs default to 10 minutes.
+2. **Every agent spend carries a required intent id** (`--intent-id`, e.g. the invoice id). It is part of the hashed intent record.
+3. **Before building**, `payOnce` checks two sources:
+   - **The operator journal** (`$VAULT_HOME/intents.jsonl`). It is written *before* submitting, so a crash right after submit is recoverable.
+   - **The chain**: recent txs of the allowance token, each carrying its intent record.
+
+   If the intent has landed, it returns `already-paid` and builds nothing. If an earlier attempt is still undecided, it **waits for that attempt's fate** instead of paying again.
+4. **On "inputs already spent"**, it resolves the attempted tx's fate before anything else:
+   - **landed:** the hash is on-chain, or the provider names it as the spender of its inputs. This is treated as success.
+   - **never:** another tx spent its inputs, or its TTL passed and it isn't on-chain. Only this case rebuilds.
+   - **unknown:** it re-checks, bounded by the TTL.
+
+**What you must do as an integrator:**
+- **Derive the intent id from the business object** (invoice id, payout id), never from a timestamp or a random value per attempt. Retries must reuse it.
+- **Persist the journal durably**, next to the agent, and back it up. The chain scan is a safety net: it only covers the last N txs of *one* allowance.
+- **Scope matters.** The journal is operator-wide, so it refuses an id even on another allowance or vault. The chain scan is per allowance. If you run several operators, give them disjoint id spaces or a shared journal.
+- **Don't shorten the TTL grace below your provider's indexing lag.** A decision of "never" must not be made before the provider could have shown the tx.
+- **Owner commands** (fund, grant, revoke, …) get the same fate check on resubmission. They are not keyed by an id across separate invocations, so don't blindly re-run a timed-out owner command. Check `vault info` first.
+
+**What the demo runs actually did** (verified on-chain, merchant `addr_test1vznmgqa7…`):
+
+| Vault | INV-1001 | INV-1002 | INV-1003 |
+|---|---|---|---|
+| `addr_test1wpzj0k…` (attempt 2) | 4 tADA | 8 tADA | none |
+| `addr_test1wrsmqm…` (attempt 3) | 4 tADA | 8 tADA | none |
+| `addr_test1wq4l2x…` (final, `demo/RESULTS.md`) | 4 tADA | 8 tADA | 9 tADA |
+
+- The final run paid each intent exactly once.
+- No allowance ever paid the same intent twice.
+- But because I restarted the demo from scratch with the same invoice ids, **the merchant received INV-1001 and INV-1002 three times each (45 tADA instead of 21).** Nothing stopped it, since each restart was a fresh vault and there was no intent journal yet.
+- With the current SDK, the operator journal refuses a reused id. Each demo run now gets a per-run id suffix and includes a retry step, which reports "already paid".
 
 ## What Cardano can't enforce exactly
 
@@ -239,7 +276,8 @@ Test counts at the time of writing:
 |---|---|
 | On-chain Aiken tests | 182 (168 unit/adversarial, 14 property) |
 | Mutations killed | 72 |
-| SDK unit + emulator tests | 28 |
+| SDK unit + emulator tests | 38 |
 | Real-node adversarial replays | 34 |
-| CLI smoke checks | 17 |
+| Real-node double-pay scenarios | 4 |
+| CLI smoke checks | 19 |
 | Preprod demo txs (all links in `demo/RESULTS.md`) | 12, plus 5 refusals |
