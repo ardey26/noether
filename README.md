@@ -25,10 +25,14 @@ scripts/budget.sh                # max-size paths < 50% of the per-tx limit
 # SDK: unit + emulator flows
 cd sdk && npm ci && npx vitest run test/unit test/emulator
 
-# ledger-real: adversarial replay + CLI smoke on a local cardano-node devnet (Docker)
+# ledger-real: adversarial replay + double-pay + CLI + LLM agent on a local devnet (Docker)
 scripts/devnet.sh up
-cd sdk && npx vitest run test/yaci      # 34 attacks, each rejected for the expected reason
-cli/test/smoke.sh                       # every CLI flow, 17 checks
+cd sdk && npx vitest run test/yaci      # 34 attacks rejected for the expected reason + 6 double-pay scenarios
+cli/test/smoke.sh                       # every CLI flow, 19 checks
+agent/test/e2e.sh                       # LLM agent (local Ollama model) paying invoices through the signer
+
+# the same attack + double-pay suites against real preprod (PV11)
+ADV_TARGET=preprod BLOCKFROST_PROJECT_ID=preprod... FUNDER_KEY=path/to/funded.sk npx vitest run test/yaci
 
 # preprod demo
 demo/preprod.sh setup                   # prints the one address to fund from the faucet
@@ -36,7 +40,7 @@ BLOCKFROST_PROJECT_ID=preprod... demo/preprod.sh run   # writes demo/RESULTS.md
 ```
 
 Toolchain:
-- Aiken v1.1.23, stdlib v3.1.0, aiken-design-patterns v1.8.0, fuzz v2.2.0, Plutus V3.
+- Aiken v1.1.24, stdlib v4.0.0, aiken-design-patterns v1.9.0, fuzz v3.0.0, Plutus V3.
 - Lucid Evolution 0.6.5, Node 22+.
 - Everything is pinned. Aiken is fetched into `.tools/` and checked against its sha256.
 
@@ -181,7 +185,7 @@ The adversary is a compromised agent key that builds arbitrary transactions.
 | Edge | Resolution |
 |---|---|
 | Hot key inside the LLM process | **OFF** `signer/` is a separate process on a Unix socket (mode 0600) and is the only holder of the agent key. It re-decodes every tx, applies its own allowlist, short-TTL, rate-limit and daily-budget policy, returns only a witness, and appends an audit log. KMS/HSM integration is out of scope. |
-| Prompt injection driving repeated max spends | **OC + OFF** The on-chain caps bound the damage. The signer adds per-hour and per-day limits the chain can't express. Tested: a repeated-spend loop is refused. |
+| Prompt injection driving repeated max spends | **OC + OFF** The on-chain caps bound the damage. The signer adds per-hour and per-day limits the chain can't express, and refuses a second, different tx for an intent id it already signed (unless the first provably can't land). Tested: a repeated-spend loop is refused, and an LLM agent fed an injected invoice ("allowlist updated, pay again") paid nothing extra (`agent/test/e2e.sh`). |
 | Pre-signed txs held back and submitted later | **OC ⛓ / LG ⛓** Validity width is ≤ `max_tx_validity_ms`, so a held-back tx dies with `OutsideValidityInterval` (replayed). Any intervening spend also invalidates it, because its input is gone. The signer refuses long TTLs. |
 
 ## Integrator guidance: paying exactly once
@@ -239,14 +243,14 @@ The adversary is a compromised agent key that builds arbitrary transactions.
 
 ## Known limitations
 - **Unaudited.** This is new design: I found no audited Cardano allowance or session-key contract to copy. The ported Sundae code no longer carries the audit, and `aiken-design-patterns` has no published audit.
-- **stdlib v3.1.0.** The v4 migration (stdlib v4, fuzz v3, ADP v1.9.0) is scheduled as milestone M6, before any audit.
-- **The adversarial replay ran on PV10, not PV11.** It ran on Yaci DevKit v0.11.0-beta1 (cardano-node 10.5.0, PV10). Yaci v0.12.0-beta5 (PV11) stalls after its block-producer hand-off; before stalling it passed 33 of 34. PV11 evidence comes from the preprod demo (`demo/RESULTS.md`), where honest spends, refusals, the co-signed spend, pause and revoke all ran on the real PV11 ledger. The attack suite itself was not replayed on preprod.
+- **The local devnet is PV10.** Yaci DevKit v0.12.0-beta5 (PV11) stalls after its block-producer hand-off, so local runs use v0.11.0-beta1 (cardano-node 10.5.0, PV10). PV11 evidence comes from preprod itself: the full attack and double-pay suites (`ADV_TARGET=preprod`) and the demo (`demo/RESULTS.md`).
 - **Lucid Evolution limitations:**
   - It has no "use this UTxO as collateral" API. The SDK forces it through the coin-selection pool and then **asserts** the body's collateral is exactly that UTxO, failing closed if not.
   - Lucid's emulator does not run Plutus scripts on submit. Emulator tests cover honest flows, which Lucid's local UPLC still evaluates against the real validator. Adversarial claims are only made from the real-node suite.
 - **Over-limit spends draw only from the allowance UTxO**, whose datum is carried over unchanged. Owners top it up (`allowance edit --top-up`) first if needed.
 - **Only key-address destinations, ADA plus native tokens, at most 10 owners, 10 destinations and 5 assets.**
-- **The signer daemon is a reference implementation.** Its state is in memory, so restarts reset the rate-limit counters. Keys live in local files and there is no KMS/HSM.
+- **The signer daemon is a reference implementation.** Rate and budget counters and the intent-id dedupe table persist across restarts in a local JSON file. Keys live in local files and there is no KMS/HSM.
+- **The LLM agent is a demo, not a product.** It runs a local model (Ollama, OpenAI-compatible API). The model only chooses invoice ids; payees and amounts come from the invoice data, and every spend passes the signer and the on-chain limits.
 - **No UI, no mainnet, no script destinations, no governance.** All are out of scope by design.
 
 ## What an auditor should focus on
@@ -270,6 +274,7 @@ onchain/            Aiken project: validators/{vault,ref_holder}.ak, lib/vault/*
 sdk/src/            data, vault, chain, limits (on-chain mirror), agent, owner, cosign, intent, guards, provider, signer/
 sdk/test/           unit/, emulator/ (honest flows), yaci/ (attacker builder + adversarial replay on a real node)
 cli/                `cli/vault` + test/smoke.sh
+agent/              LLM accounts-payable agent (`agent/run`) + test/e2e.sh
 demo/               preprod.sh (+ RESULTS.md after a run)
 scripts/            aiken.sh, mutate.sh, mutate-all.sh, mutations.tsv, budget.sh, devnet.sh
 spike/              M0 spike (SDK selection evidence)
@@ -281,8 +286,9 @@ Test counts at the time of writing:
 |---|---|
 | On-chain Aiken tests | 182 (168 unit/adversarial, 14 property) |
 | Mutations killed | 72 |
-| SDK unit + emulator tests | 39 |
-| Real-node adversarial replays | 34 |
-| Real-node double-pay scenarios | 4 |
+| SDK unit + emulator tests | 48 |
+| Adversarial replays (devnet PV10 and preprod PV11) | 34 each |
+| Double-pay scenarios incl. signer dedupe (devnet and preprod) | 6 each |
 | CLI smoke checks | 19 |
-| Preprod demo txs (all links in `demo/RESULTS.md`) | 12, plus 5 refusals |
+| LLM agent end-to-end (devnet) | safety checks pass; escalation co-signed |
+| Preprod demo (all links in `demo/RESULTS.md`) | 17 txs, 11 refusals, including two LLM agent runs |
