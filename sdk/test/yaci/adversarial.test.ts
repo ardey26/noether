@@ -2,7 +2,7 @@
 // txs (test/yaci/attacker.ts). Every test changes one aspect of the honest
 // spend and asserts the node rejects it, and for what reason.
 import { beforeAll, describe, expect, it } from "vitest";
-import { CML, Data, mintingPolicyToId, scriptFromNative } from "@lucid-evolution/lucid";
+import { CML, Data, mintingPolicyToId, scriptFromNative, type UTxO } from "@lucid-evolution/lucid";
 import { buildAgentSpend } from "../../src/agent.js";
 import { awaitIndexed } from "../../src/chain.js";
 import { allowanceToData, configToData, mintRedeemer, spendRedeemer } from "../../src/data.js";
@@ -186,8 +186,10 @@ describe("utxo structure", () => {
       .complete();
     const h = await (await plant.sign.withWallet().complete()).submit();
     await awaitIndexed(w.lucid, h);
-    const planted = (await w.lucid.utxosAt(w.vault.address)).find((u) => u.txHash === h)!;
-    const fake = { ...c, allowance: { ...c.allowance, utxo: planted } };
+    // The provider's address listing can lag the tx; wait until it shows the planted UTxO.
+    let planted: UTxO | undefined;
+    await eventually(async () => !!(planted = (await w.lucid.utxosAt(w.vault.address)).find((u) => u.txHash === h)));
+    const fake = { ...c, allowance: { ...c.allowance, utxo: planted! } };
     await expectScriptFailure(await attack(fake));
   });
   it("U4 the agent writes its own datum (spent = 0)", async () => {
