@@ -148,6 +148,70 @@ describe("vault lifecycle (emulator)", () => {
     }
   });
 
+  it("signer dedupes by intent id: a second, different tx for a paid intent is refused, also after a restart", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "signer-"));
+    let socketPath = join(dir, "signer.sock");
+    const statePath = join(dir, "state.json");
+    // Emulator chain view for the fate check: a landed agent spend leaves its payment at output 0.
+    const chain = {
+      txExists: async (h: string) => (await lucid.utxosByOutRef([{ txHash: h, outputIndex: 0 }])).length > 0,
+      spenderOf: async () => undefined,
+      txInputs: async () => undefined,
+      txMetadata: async () => undefined,
+      tipMs: async () => emulator.now(),
+    };
+    const opts = {
+      socketPath,
+      privateKey: w.agent.privateKey,
+      statePath,
+      chain,
+      now: () => emulator.now(),
+      policy: {
+        agentKeyHash: w.agent.pkh,
+        vaultAddress: vault.address,
+        allowanceUnit: unit,
+        destinations: [w.payee.address],
+        maxTxPerHour: 2,
+        maxLovelacePerDay: 100n * ADA,
+        maxTtlMs: 15 * 60_000,
+        allowCoSigned: false,
+        slot: SLOT_CONFIG_NETWORK.Custom,
+      },
+    };
+    const payVia = async (intentId: string) => {
+      const ctx = await agentCtx();
+      const b = await buildAgentSpend({ ...ctx, payments: [{ to: w.payee.address, assets: { lovelace: 1n * ADA } }], intentId, purpose: intentId });
+      return { cbor: b.tx.toCBOR() };
+    };
+    let server = await startSigner(opts);
+    try {
+      const first = await payVia("INV-SIGNER-1");
+      const wit = await requestWitness(socketPath, first.cbor);
+      await (await assemble(lucid, first.cbor, [wit])).submit();
+      emulator.awaitBlock(1);
+      // Same body again: harmless re-sign.
+      await expect(requestWitness(socketPath, first.cbor)).resolves.toBeTypeOf("string");
+      // A fresh tx for the same intent (e.g. a buggy retry): refused, the intent is paid.
+      const dup = await payVia("INV-SIGNER-1");
+      await expect(requestWitness(socketPath, dup.cbor)).rejects.toThrow(/already paid/);
+
+      // Restart (a fresh process would get a fresh socket): the intent table and the rate counters survive.
+      await new Promise((r) => {
+        server.close(r);
+        server.closeAllConnections();
+      });
+      opts.socketPath = socketPath = join(dir, "signer-2.sock");
+      server = await startSigner(opts);
+      await expect(requestWitness(socketPath, (await payVia("INV-SIGNER-1")).cbor)).rejects.toThrow(/already paid/);
+      const second = await payVia("INV-SIGNER-2");
+      await (await assemble(lucid, second.cbor, [await requestWitness(socketPath, second.cbor)])).submit();
+      emulator.awaitBlock(1);
+      await expect(requestWitness(socketPath, (await payVia("INV-SIGNER-3")).cbor)).rejects.toThrow(/rate limit/);
+    } finally {
+      server.close();
+    }
+  });
+
   it("preflight blocks a spend above the per-tx cap", async () => {
     const ctx = await agentCtx();
     await expect(

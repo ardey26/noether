@@ -136,21 +136,21 @@ describe("signer policy", () => {
   };
   const now = 900_000; // slot 900; ttl 1000 -> 100 s ahead
   it("signs a compliant tx", () => {
-    expect(evaluate(policy, { signed: [] }, mkTx({}), now)).toEqual({ ok: true, lovelaceOut: 5_200_000n });
+    expect(evaluate(policy, { signed: [], intents: {} }, mkTx({}), now)).toEqual({ ok: true, lovelaceOut: 5_200_000n });
   });
   it("refuses unknown destinations, long TTLs, wrong signer, extra inputs", () => {
-    expect(evaluate(policy, { signed: [] }, mkTx({ to: other }), now).ok).toBe(false);
-    expect(evaluate(policy, { signed: [] }, mkTx({ ttl: 10_000n }), now).ok).toBe(false);
-    expect(evaluate(policy, { signed: [] }, mkTx({ signer: k(9) }), now).ok).toBe(false);
-    expect(evaluate(policy, { signed: [] }, mkTx({ inputs: 2 }), now).ok).toBe(false);
+    expect(evaluate(policy, { signed: [], intents: {} }, mkTx({ to: other }), now).ok).toBe(false);
+    expect(evaluate(policy, { signed: [], intents: {} }, mkTx({ ttl: 10_000n }), now).ok).toBe(false);
+    expect(evaluate(policy, { signed: [], intents: {} }, mkTx({ signer: k(9) }), now).ok).toBe(false);
+    expect(evaluate(policy, { signed: [], intents: {} }, mkTx({ inputs: 2 }), now).ok).toBe(false);
   });
   it("rate-limits repeated max spends (prompt-injection loop)", () => {
-    const st = { signed: [{ at: now - 1000, lovelace: 5_200_000n }, { at: now - 500, lovelace: 5_200_000n }] };
+    const st = { signed: [{ at: now - 1000, lovelace: 5_200_000n }, { at: now - 500, lovelace: 5_200_000n }], intents: {} };
     const d = evaluate(policy, st, mkTx({}), now);
     expect(d).toMatchObject({ ok: false });
   });
   it("enforces the daily budget", () => {
-    const st = { signed: [{ at: now - 4_000_000, lovelace: 8_000_000n }] };
+    const st = { signed: [{ at: now - 4_000_000, lovelace: 8_000_000n }], intents: {} };
     expect(evaluate(policy, st, mkTx({}), now)).toMatchObject({ ok: false, reason: expect.stringMatching(/daily budget/) });
   });
 });

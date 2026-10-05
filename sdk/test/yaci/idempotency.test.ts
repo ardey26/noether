@@ -9,6 +9,10 @@ import { awaitSettled } from "../../src/chain.js";
 import { assemble, witness } from "../../src/cosign.js";
 import { FileJournal, NeverLands, submitResolving, txFacts } from "../../src/idempotency.js";
 import { payOnce } from "../../src/pay.js";
+import { requestWitness } from "../../src/signer/client.js";
+import { startSigner } from "../../src/signer/server.js";
+import { SLOT_CONFIG_NETWORK } from "@lucid-evolution/lucid";
+import { NETWORK, sleep } from "./world.js";
 import { ADA, chainQuery, grant, tipMs, readAllowance, readConfig, submitRaw, yaciWorld, type World } from "./world.js";
 
 let w: World;
@@ -106,6 +110,79 @@ describe("idempotent agent payments", () => {
     const paid = await payOnce(req("INV-W", amtW), { q, journal, sign, pollMs: 2000 });
     expect(paid.status).toBe("paid");
     expect(await paymentsOf(amtW)).toBe(1);
+  });
+});
+
+describe("signer-level dedupe (last line of defence against an honest double pay)", () => {
+  async function signer() {
+    const dir = mkdtempSync(join(tmpdir(), "signer-"));
+    const socketPath = join(dir, "s.sock");
+    const server = await startSigner({
+      socketPath,
+      privateKey: w.agent.privateKey,
+      statePath: join(dir, "state.json"),
+      chain: q,
+      policy: {
+        agentKeyHash: w.agent.pkh,
+        vaultAddress: w.vault.address,
+        allowanceUnit: unit,
+        destinations: [w.payee.address],
+        maxTxPerHour: 50,
+        maxLovelacePerDay: 1_000n * ADA,
+        maxTtlMs: 60 * 60_000,
+        allowCoSigned: false,
+        slot: SLOT_CONFIG_NETWORK[NETWORK],
+      },
+    });
+    return { server, sign: (cbor: string) => requestWitness(socketPath, cbor) };
+  }
+
+  it("a buggy agent with no journal rebuilds a paid intent: the signer refuses it", async () => {
+    const amt = 1_600_000n;
+    const { server, sign: viaSigner } = await signer();
+    try {
+      const paid = await payOnce(req("INV-S1", amt), { q, journal: new FileJournal(journalPath()), sign: viaSigner, pollMs: 2000 });
+      expect(paid.status).toBe("paid");
+      // The agent "forgets" (no journal, stale provider) and builds a fresh tx for the same intent.
+      const dup = await buildSigned("INV-S1", amt);
+      await expect(viaSigner(dup)).rejects.toThrow(/already paid/);
+      expect(await paymentsOf(amt)).toBe(1);
+    } finally {
+      server.close();
+    }
+  });
+
+  it("an earlier signed tx that expired unsubmitted: refused while undecided, allowed once it can never land", async () => {
+    const amt = 1_700_000n;
+    const { server, sign: viaSigner } = await signer();
+    try {
+      // Build and have the signer sign a short-lived tx for INV-S2, but never submit it.
+      const r1 = req("INV-S2", amt, 100_000);
+      const built1 = await buildAgentSpend({
+        ...r1,
+        tipMs: await tipMs(),
+        allowance: await readAllowance(w.lucid, w.vault, unit),
+        config: await readConfig(w.lucid, w.vault),
+      });
+      await viaSigner(built1.tx.toCBOR());
+      const ttl = txFacts(w.lucid, built1.tx.toCBOR()).ttlMs;
+      // A rebuild right away is refused: the first tx could still land.
+      const built2 = await buildAgentSpend({
+        ...req("INV-S2", amt),
+        tipMs: await tipMs(),
+        allowance: await readAllowance(w.lucid, w.vault, unit),
+        config: await readConfig(w.lucid, w.vault),
+      });
+      await expect(viaSigner(built2.tx.toCBOR())).rejects.toThrow(/undecided/);
+      // After its TTL (+ the fate check's grace for indexer lag) it can never land: the rebuild is allowed.
+      await sleep(Math.max(0, ttl - Date.now()) + 125_000);
+      const r3 = req("INV-S2", amt);
+      const paid = await payOnce(r3, { q, journal: new FileJournal(journalPath()), sign: viaSigner, pollMs: 2000 });
+      expect(paid.status).toBe("paid");
+      expect(await paymentsOf(amt)).toBe(1);
+    } finally {
+      server.close();
+    }
   });
 });
 
