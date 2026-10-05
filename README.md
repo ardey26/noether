@@ -1,4 +1,4 @@
-# Noether
+# <picture><source media="(prefers-color-scheme: dark)" srcset="assets/logo-dark.svg"><img src="assets/logo-light.svg" alt="" width="32" height="32"></picture> Noether
 
 **Budgeted on-chain accounts for AI agents on Cardano. Owners keep the keys, agents get a bounded allowance, the chain enforces the limits.**
 
