@@ -22,7 +22,6 @@
     --no: #e0838c; --no-text: #f0b4b9; --no-bg: #4a2a33; --no-line: #6b3a44;
     --edge: 0 0 0 1px #3f424d;
     --r-sm: 4px; --r-md: 8px; --r-lg: 14px;
-    --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
   }
   * { box-sizing: border-box; }
   html { -webkit-text-size-adjust: 100%; }
@@ -44,7 +43,7 @@
   .hero { padding: 88px 0 56px; display: flex; flex-direction: column; gap: 20px; }
   h1 { font-size: 84px; line-height: 1; letter-spacing: -.04em; }
   .lede { font-size: 22px; color: var(--n400); margin: 0; }
-  .install { display: flex; align-self: flex-start; align-items: center; gap: 14px; max-width: 100%; background: var(--surface); box-shadow: var(--edge); border-radius: var(--r-md); padding: 8px 8px 8px 16px; font: 500 15px var(--mono); margin-top: 12px; }
+  .install { display: flex; align-self: flex-start; align-items: center; gap: 14px; max-width: 100%; background: var(--surface); box-shadow: var(--edge); border-radius: var(--r-md); padding: 8px 8px 8px 16px; font: 500 15px "Inter", system-ui, sans-serif; margin-top: 12px; }
   .install code { font: inherit; overflow-x: auto; white-space: nowrap; }
   .install code::before { content: "$ "; color: var(--n600); }
   .copy { flex: none; font: 500 13px "Inter", sans-serif; color: var(--a300); background: transparent; border: 1px solid var(--accent); border-radius: 6px; padding: 6px 12px; cursor: pointer; }
@@ -67,7 +66,7 @@
   .meter { position: relative; height: 8px; border-radius: 999px; background: var(--n900); }
   .meter-fill { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: var(--accent); border-radius: 999px; transition: width .6s cubic-bezier(.2,.7,.2,1); }
   .agent { width: 64px; height: 64px; border-radius: var(--r-md); background: var(--surface); box-shadow: inset 0 0 0 1px var(--n700); display: grid; place-items: center; font-size: 32px; color: var(--text); }
-  .chip { position: absolute; left: 50%; top: -14px; transform: translateX(-50%); white-space: nowrap; font: 500 12px var(--mono); color: var(--n500); background: transparent; border-radius: var(--r-sm); padding: 4px 8px; transition: color .3s, background .3s; }
+  .chip { position: absolute; left: 50%; top: -14px; transform: translateX(-50%); white-space: nowrap; font: 500 12px "Inter", system-ui, sans-serif; font-variant-numeric: tabular-nums; color: var(--n500); background: transparent; border-radius: var(--r-sm); padding: 4px 8px; transition: color .3s, background .3s; }
   .chip.ok { color: var(--a300); background: var(--a900); }
   .chip.no { color: var(--no-text); background: var(--no-bg); }
   .payees { display: flex; flex-direction: column; gap: 10px; }
@@ -109,7 +108,7 @@
 
   .rules { display: grid; grid-template-columns: 1.4fr 1fr; gap: 56px; align-items: center; }
   .rules h2 { order: 2; text-align: right; }
-  .log { background: #10111b; box-shadow: var(--edge); border-radius: var(--r-md); padding: 24px; display: flex; flex-direction: column; gap: 14px; font: 400 15px var(--mono); }
+  .log { background: #10111b; box-shadow: var(--edge); border-radius: var(--r-md); padding: 24px; display: flex; flex-direction: column; gap: 14px; font: 400 15px "Inter", system-ui, sans-serif; font-variant-numeric: tabular-nums; }
   .log div { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
   .log div > span:first-child { color: var(--n300); }
   .log div > span:last-child { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
@@ -221,9 +220,9 @@
     <section class="rules" aria-labelledby="rules-h">
       <h2 id="rules-h">Your agent knows the rules.</h2>
       <div class="log">
-        <div><span>pay 4 ADA · INV-1001</span><span class="paid"><i class="ph ph-check-circle" aria-hidden="true"></i>paid</span></div>
-        <div><span>pay 12 ADA · INV-1004</span><span class="refused"><i class="ph ph-x-circle" aria-hidden="true"></i>TX_CAP</span></div>
-        <div><span>pay 4 ADA · INV-1001</span><span class="dup"><i class="ph ph-arrow-counter-clockwise" aria-hidden="true"></i>already paid</span></div>
+        <div><span>Pay 4 ADA for INV-1001</span><span class="paid"><i class="ph ph-check-circle" aria-hidden="true"></i>paid</span></div>
+        <div><span>Pay 12 ADA for INV-1004</span><span class="refused"><i class="ph ph-x-circle" aria-hidden="true"></i>over cap</span></div>
+        <div><span>Pay 4 ADA for INV-1001</span><span class="dup"><i class="ph ph-arrow-counter-clockwise" aria-hidden="true"></i>already paid</span></div>
       </div>
     </section>
   </main>
@@ -243,7 +242,7 @@
 
   // Agent pays 4, 8, 9 ADA; the 12 ADA payment is over the 10 ADA per-payment cap and refused.
   const spentBy = [0, 4, 12, 21, 21];
-  const chips = [["waiting…", ""], ["−4 ADA", "ok"], ["−8 ADA", "ok"], ["−9 ADA", "ok"], ["−12 ADA · refused", "no"]];
+  const chips = [["waiting…", ""], ["−4 ADA", "ok"], ["−8 ADA", "ok"], ["−9 ADA", "ok"], ["−12 ADA refused", "no"]];
   const fill = document.getElementById("fill"), spent = document.getElementById("spent"), chip = document.getElementById("chip");
   function render(shown) {
     fill.style.width = (spentBy[shown] / 25 * 100) + "%";
