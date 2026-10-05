@@ -1,6 +1,20 @@
 # Noether
 
-An m-of-n owner treasury that grants AI agents and bots **scoped allowances**. Agents spend autonomously with only their own key, within limits the chain enforces. Spends over the limits need the agent and the owner threshold to sign one exact tx. Owners can kill one allowance or pause all of them in a single tx.
+**Budgeted on-chain accounts for AI agents on Cardano. Owners keep the keys, agents get a bounded allowance, the chain enforces the limits.**
+
+AI agents that handle money today run on hot keys with full-balance exposure, and their spending limits live in software an attacker already controls once the key leaks. This project moves the limits on-chain.
+
+An owner multisig holds a vault. Owners grant each agent an allowance: a cap per time window, a cap per transaction, an allowlist of destinations, and an expiry. The agent spends on its own within those limits, and every node validates them before a transaction is accepted. Anything beyond the limits requires owner signatures on the exact transaction. Owners can pause every agent at once, or revoke a single allowance and reclaim its funds, in one transaction.
+
+A stolen agent key is bounded loss, not total loss. That property does not depend on the agent's code, the signer, or any service we run.
+
+## Guarantees
+
+- An agent can never spend more than its per-window or per-transaction cap, including fees.
+- An agent can only pay allowlisted addresses and only move allowlisted assets.
+- Allowances expire on their own and can be revoked at any time, even if the agent has corrupted its own state.
+- Rotating owners never changes the vault's address.
+- DeFi access is opt-in per protocol through audited adapters that force all proceeds back to the vault.
 
 > **Status: MVP, unaudited, preprod only.** Nothing here has had an independent audit. Don't put mainnet value behind it. See [What an auditor should focus on](#what-an-auditor-should-focus-on).
 
